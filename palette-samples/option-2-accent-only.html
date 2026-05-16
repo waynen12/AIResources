@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Option 2 — Accent Only</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    min-height: 100vh;
+    background: #F5F5F5;
+    color: #1A1A2E;
+  }
+  nav {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 16px 32px;
+    background: white;
+    border-bottom: 1px solid #E5E5E5;
+  }
+  nav .logo { font-size: 20px; font-weight: 700; color: #F57C00; }
+  nav .theme-btn {
+    background: #F5F5F5; border: 1px solid #E5E5E5;
+    color: #555; padding: 6px 14px; border-radius: 20px; cursor: pointer; font-size: 13px;
+  }
+  .hero {
+    padding: 40px 32px 32px;
+    text-align: center;
+    background: white;
+    border-bottom: 1px solid #E5E5E5;
+  }
+  .hero h1 { font-size: 32px; font-weight: 800; color: #1A1A2E; margin-bottom: 6px; }
+  .hero p { color: #777; font-size: 15px; margin-bottom: 20px; }
+  .search-bar {
+    display: flex; gap: 8px; max-width: 520px; margin: 0 auto;
+  }
+  .search-bar input {
+    flex: 1; padding: 11px 16px; border-radius: 10px;
+    border: 2px solid #E5E5E5; font-size: 15px; outline: none;
+    transition: border-color 0.2s;
+  }
+  .search-bar input:focus { border-color: #F57C00; }
+  .search-bar button {
+    padding: 11px 20px; border-radius: 10px; border: none;
+    background: #F57C00; color: white; font-weight: 600; cursor: pointer; font-size: 14px;
+  }
+  .toolbar {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 16px 32px; max-width: 1100px; margin: 0 auto;
+  }
+  .count { font-size: 13px; color: #999; }
+  .add-btn {
+    padding: 9px 20px; border-radius: 10px;
+    background: #F57C00; color: white; font-weight: 700;
+    border: none; cursor: pointer; font-size: 14px;
+  }
+  .cards {
+    display: grid; grid-template-columns: repeat(3, 1fr);
+    gap: 16px; padding: 0 32px 48px; max-width: 1100px; margin: 0 auto;
+  }
+  .card {
+    background: white; border-radius: 14px; padding: 20px;
+    border: 1px solid #E5E5E5;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+    transition: box-shadow 0.2s;
+  }
+  .card:hover { box-shadow: 0 6px 20px rgba(0,0,0,0.08); }
+  .card-type {
+    display: inline-block; font-size: 11px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 0.5px; color: #F57C00;
+    background: rgba(245,124,0,0.1); padding: 3px 8px; border-radius: 6px;
+    margin-bottom: 10px;
+  }
+  .card h3 { font-size: 15px; font-weight: 700; color: #1A1A2E; margin-bottom: 6px; }
+  .card p { font-size: 13px; color: #666; line-height: 1.5; margin-bottom: 12px; }
+  .tags { display: flex; flex-wrap: wrap; gap: 6px; }
+  .tag {
+    font-size: 11px; padding: 3px 9px; border-radius: 12px;
+    background: #F0F0F0; color: #555; font-weight: 500; cursor: pointer;
+  }
+  .tag:hover { background: rgba(245,124,0,0.12); color: #F57C00; }
+  .card-footer { margin-top: 14px; font-size: 11px; color: #bbb; display: flex; justify-content: space-between; }
+</style>
+</head>
+<body>
+  <nav>
+    <span class="logo">AI Resources</span>
+    <button class="theme-btn">☀ Light</button>
+  </nav>
+  <div class="hero">
+    <h1>AI Resources</h1>
+    <p>Tutorials, articles, videos and courses for the team</p>
+    <div class="search-bar">
+      <input type="text" placeholder="Search resources, tags..." />
+      <button>Search</button>
+    </div>
+  </div>
+  <div class="toolbar">
+    <span class="count">24 resources</span>
+    <button class="add-btn">+ Add Resource</button>
+  </div>
+  <div class="cards">
+    <div class="card">
+      <span class="card-type">YouTube</span>
+      <h3>Getting Started with GitHub Copilot</h3>
+      <p>A practical walkthrough for developers new to AI pair programming in VS Code.</p>
+      <div class="tags">
+        <span class="tag">copilot</span>
+        <span class="tag">vscode</span>
+        <span class="tag">beginner</span>
+      </div>
+      <div class="card-footer"><span>Added by Wayne</span><span>Today</span></div>
+    </div>
+    <div class="card">
+      <span class="card-type">Course</span>
+      <h3>Prompt Engineering for Developers</h3>
+      <p>DeepLearning.AI short course covering effective prompting strategies with real examples.</p>
+      <div class="tags">
+        <span class="tag">prompting</span>
+        <span class="tag">llm</span>
+        <span class="tag">course</span>
+      </div>
+      <div class="card-footer"><span>Added by Sarah</span><span>2 days ago</span></div>
+    </div>
+    <div class="card">
+      <span class="card-type">Article</span>
+      <h3>How Cursor Changes the Way You Write Code</h3>
+      <p>A deep dive into AI-first code editors and what that means for developer workflows.</p>
+      <div class="tags">
+        <span class="tag">cursor</span>
+        <span class="tag">workflow</span>
+      </div>
+      <div class="card-footer"><span>Added by Mike</span><span>1 week ago</span></div>
+    </div>
+  </div>
+  <p style="text-align:center;color:#ccc;font-size:12px;padding-bottom:24px;">Option 2 — Accent Only (Clean/Neutral)</p>
+</body>
+</html>

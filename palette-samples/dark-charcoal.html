@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dark Mode — Charcoal</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    min-height: 100vh;
+    background: #111827;
+    color: #E5E7EB;
+  }
+  nav {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 16px 32px;
+    background: rgba(0,0,0,0.25);
+    backdrop-filter: blur(8px);
+    position: relative; z-index: 1;
+  }
+  nav .logo { color: white; font-size: 20px; font-weight: 700; }
+  nav .theme-btn {
+    background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2);
+    color: rgba(255,255,255,0.8); padding: 6px 14px; border-radius: 20px; cursor: pointer; font-size: 13px;
+  }
+  .hero {
+    padding: 40px 32px 48px;
+    text-align: center;
+    background: linear-gradient(135deg, #F57C00 0%, #FF8F00 40%, #7B6FBD 80%, #4A5BAA 100%);
+  }
+  .hero h1 { color: white; font-size: 34px; font-weight: 800; margin-bottom: 6px; text-shadow: 0 2px 8px rgba(0,0,0,0.2); }
+  .hero p { color: rgba(255,255,255,0.85); font-size: 15px; margin-bottom: 22px; }
+  .search-bar {
+    display: flex; gap: 8px; max-width: 520px; margin: 0 auto;
+  }
+  .search-bar input {
+    flex: 1; padding: 12px 16px; border-radius: 10px; border: none;
+    font-size: 15px; background: rgba(255,255,255,0.97);
+    box-shadow: 0 4px 16px rgba(0,0,0,0.2); outline: none; color: #1A1A2E;
+  }
+  .search-bar button {
+    padding: 12px 20px; border-radius: 10px; border: none;
+    background: #1A1A2E; color: white; font-weight: 600; cursor: pointer; font-size: 14px;
+  }
+  .toolbar {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 20px 32px 12px; max-width: 1100px; margin: 0 auto;
+  }
+  .count { font-size: 13px; color: #6B7280; }
+  .add-btn {
+    padding: 9px 20px; border-radius: 10px;
+    background: #F57C00; color: white; font-weight: 700;
+    border: none; cursor: pointer; font-size: 14px;
+    box-shadow: 0 2px 8px rgba(245,124,0,0.35);
+  }
+  .cards {
+    display: grid; grid-template-columns: repeat(3, 1fr);
+    gap: 16px; padding: 0 32px 48px; max-width: 1100px; margin: 0 auto;
+  }
+  .card {
+    background: #1F2937;
+    border-radius: 14px; padding: 20px;
+    border: 1px solid #374151;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+    transition: box-shadow 0.2s, transform 0.2s;
+  }
+  .card:hover { box-shadow: 0 8px 24px rgba(0,0,0,0.4); transform: translateY(-2px); }
+  .card-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 10px; }
+  .card-type {
+    display: inline-block; font-size: 11px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 0.5px; color: #FB923C;
+    background: rgba(245,124,0,0.15); padding: 3px 8px; border-radius: 6px;
+  }
+  .card-link { font-size: 18px; text-decoration: none; color: #6B7280; }
+  .card-link:hover { color: #FB923C; }
+  .card h3 { font-size: 15px; font-weight: 700; color: #F9FAFB; margin-bottom: 6px; }
+  .card p { font-size: 13px; color: #9CA3AF; line-height: 1.5; margin-bottom: 12px; }
+  .tags { display: flex; flex-wrap: wrap; gap: 6px; }
+  .tag {
+    font-size: 11px; padding: 3px 9px; border-radius: 12px;
+    background: #374151; color: #9CA3AF; font-weight: 500; cursor: pointer;
+    transition: background 0.15s, color 0.15s;
+  }
+  .tag:hover { background: rgba(245,124,0,0.2); color: #FB923C; }
+  .card-footer { margin-top: 14px; font-size: 11px; color: #4B5563; display: flex; justify-content: space-between; border-top: 1px solid #374151; padding-top: 10px; }
+</style>
+</head>
+<body>
+  <nav>
+    <span class="logo">AI Resources</span>
+    <button class="theme-btn">🌙 Dark</button>
+  </nav>
+  <div class="hero">
+    <h1>AI Resources</h1>
+    <p>Tutorials, articles, videos and courses for the team</p>
+    <div class="search-bar">
+      <input type="text" placeholder="Search resources, tags..." />
+      <button>Search</button>
+    </div>
+  </div>
+  <div class="toolbar">
+    <span class="count">24 resources</span>
+    <button class="add-btn">+ Add Resource</button>
+  </div>
+  <div class="cards">
+    <div class="card">
+      <div class="card-header">
+        <span class="card-type">YouTube</span>
+        <a class="card-link" href="#" title="Open link">↗</a>
+      </div>
+      <h3>Getting Started with GitHub Copilot</h3>
+      <p>A practical walkthrough for developers new to AI pair programming in VS Code.</p>
+      <div class="tags">
+        <span class="tag">copilot</span>
+        <span class="tag">vscode</span>
+        <span class="tag">beginner</span>
+      </div>
+      <div class="card-footer"><span>Added by Wayne</span><span>Today</span></div>
+    </div>
+    <div class="card">
+      <div class="card-header">
+        <span class="card-type">Course</span>
+        <a class="card-link" href="#" title="Open link">↗</a>
+      </div>
+      <h3>Prompt Engineering for Developers</h3>
+      <p>DeepLearning.AI short course covering effective prompting strategies with real examples.</p>
+      <div class="tags">
+        <span class="tag">prompting</span>
+        <span class="tag">llm</span>
+        <span class="tag">course</span>
+      </div>
+      <div class="card-footer"><span>Added by Sarah</span><span>2 days ago</span></div>
+    </div>
+    <div class="card">
+      <div class="card-header">
+        <span class="card-type">Article</span>
+        <a class="card-link" href="#" title="Open link">↗</a>
+      </div>
+      <h3>How Cursor Changes the Way You Write Code</h3>
+      <p>A deep dive into AI-first code editors and what that means for developer workflows.</p>
+      <div class="tags">
+        <span class="tag">cursor</span>
+        <span class="tag">workflow</span>
+      </div>
+      <div class="card-footer"><span>Added by Mike</span><span>1 week ago</span></div>
+    </div>
+  </div>
+  <p style="text-align:center;color:#4B5563;font-size:12px;padding-bottom:24px;">Dark Mode — Charcoal (#111827 background, #1F2937 cards)</p>
+</body>
+</html>
