@@ -188,7 +188,7 @@ export default function Home() {
             }}
             placeholder={smartMode ? 'Ask anything — press Enter to search...' : 'Search by title, description or tag...'}
             disabled={aiSearching}
-            className="pl-9 pr-11 bg-white border-none shadow-lg h-11 text-sm"
+            className="pl-9 pr-11 bg-white dark:bg-white dark:text-gray-900 dark:placeholder:text-gray-400 border-none shadow-lg h-11 text-sm"
           />
           {aiEnabled && aiHasProvider && (
             <button

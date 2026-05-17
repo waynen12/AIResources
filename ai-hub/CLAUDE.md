@@ -26,26 +26,30 @@ npm run lint     # ESLint
 - **lucide-react** — icons
 - **sonner** — toast notifications
 - **@anthropic-ai/sdk** — Anthropic Claude API client
+- **openai** — OpenAI API client
 
 ### Key files
 - `src/lib/db.ts` — database initialisation, table creation, `rowToResource()` helper
 - `src/lib/encryption.ts` — AES-256-GCM encrypt/decrypt for API keys stored in DB
 - `src/lib/ai/provider.ts` — `AIProvider` interface: `fetchUrlMetadata`, `suggestTags`, `smartSearch`
-- `src/lib/ai/anthropic.ts` — Anthropic implementation (see AI section for details)
+- `src/lib/ai/anthropic.ts` — Anthropic implementation using `claude-haiku-4-5`
+- `src/lib/ai/openai.ts` — OpenAI implementation using `gpt-4o`
 - `src/lib/ai/index.ts` — factory: reads kill switch + active provider from DB, returns `AIProvider | null`
 - `src/app/api/resources/route.ts` — GET (paginated + search) and POST handlers
 - `src/app/api/resources/[id]/route.ts` — PUT and DELETE handlers
+- `src/app/api/resources/export/route.ts` — GET: streams full CSV download of all resources
+- `src/app/api/resources/import/route.ts` — POST: accepts multipart CSV upload, inserts rows, returns counts
 - `src/app/api/tags/route.ts` — returns all unique tags for autocomplete
 - `src/app/api/settings/route.ts` — GET/POST global settings (`ai_enabled` kill switch)
 - `src/app/api/settings/providers/route.ts` — GET/POST AI provider config (never returns raw key)
-- `src/app/api/settings/providers/test/route.ts` — POST test connection; on success with a new key, persists it
+- `src/app/api/settings/providers/test/route.ts` — POST test connection for Anthropic or OpenAI; on success with a new key, persists it
 - `src/app/api/ai/autofill/route.ts` — POST `{ url }` → extracted metadata via `fetchUrlMetadata`
 - `src/app/api/ai/search/route.ts` — POST `{ query }` → AI-ranked `Resource[]` via `smartSearch`
 - `src/app/page.tsx` — main page: hero, search bar (keyword + smart mode), infinite scroll card grid
 - `src/components/ResourceCard.tsx` — individual resource card with edit/delete/open actions
 - `src/components/AddResourceModal.tsx` — add/edit modal; includes Auto-fill button when AI is active
 - `src/components/DeleteConfirmModal.tsx` — delete confirmation dialog
-- `src/components/SettingsModal.tsx` — gear icon modal: kill switch, API key, test connection
+- `src/components/SettingsModal.tsx` — gear icon modal: kill switch, provider selector, API key, test connection, export/import
 - `src/components/ThemeToggle.tsx` — light/dark toggle, persisted in localStorage
 
 ### Database schema
@@ -57,7 +61,7 @@ app_settings (key TEXT PRIMARY KEY, value TEXT)
 ```
 Tags are stored as up to 5 separate nullable columns (tag1–tag5), normalised to lowercase. `rowToResource()` in `db.ts` combines them into a `tags: string[]` array for the API response.
 
-All create/update/delete operations log to `audit_log` with the client IP. No UI exists for the audit log.
+All create/update/delete operations log to `audit_log` with the client IP. No UI exists for the audit log. Import operations also log each inserted row to `audit_log` with action `'import'`.
 
 ### Configuration
 - `NEXT_PUBLIC_SITE_NAME` — site title, defaults to `"AI Hub"`. Set in `.env.local` for company deployments.
@@ -71,6 +75,7 @@ All create/update/delete operations log to `audit_log` with the client IP. No UI
 - When `ai_enabled` is `true` but no provider is configured, AI buttons are **visible but disabled** with tooltip: `"Configure an AI provider in Settings to use this feature"`.
 - The **API key is never returned to the frontend** once saved. The GET endpoint for providers returns `{ provider_name, is_active, has_key: boolean }` only.
 - Showing the key in any UI element is forbidden.
+- Both provider keys are stored in the DB simultaneously; only one has `is_active = 1`. Switching providers on Save deactivates the other — the key is preserved for easy switching back.
 
 ### Provider interface (`src/lib/ai/provider.ts`)
 ```typescript
@@ -93,6 +98,9 @@ Model: `claude-haiku-4-5` throughout (fast, cheap, sufficient).
 
 **`smartSearch`** — sends the full resource catalog (id, title, description, tags) as JSON to Claude with the user's natural-language query. Claude returns a ranked array of relevant resource IDs. The `/api/ai/search` route resolves those IDs to full `Resource` objects in DB order.
 
+### OpenAI implementation (`src/lib/ai/openai.ts`)
+Model: `gpt-4o` throughout. Uses `response_format: { type: 'json_object' }` on all calls — no markdown stripping needed. Shares the same page-fetching helpers (extractMetaSignals, fetchPageSignals, YouTube oEmbed) as the Anthropic implementation. `smartSearch` returns `{ ids: [...] }` wrapped JSON; `suggestTags` returns `{ tags: [...] }`.
+
 ### AI features in the UI
 
 **Auto-fill** (Add Resource modal):
@@ -113,21 +121,38 @@ Model: `claude-haiku-4-5` throughout (fast, cheap, sufficient).
 | Situation | Toast message |
 |---|---|
 | 401 from provider | "Invalid API key — check your Settings" |
-| 402 / quota exhausted | "API account balance exhausted — top up your Anthropic account" |
+| 402 / quota exhausted | "API quota exhausted — check your account balance" |
 | URL not publicly reachable | "Could not fetch that URL — check the link is publicly accessible" |
 | Network / unknown | "Could not reach the AI provider — check your connection" |
 
 ### Settings modal (gear icon in nav)
 - **Kill switch**: toggle to enable/disable all AI features globally.
-- **Provider selector**: Anthropic (active) / OpenAI (disabled, labelled "Coming soon").
-- **API key field**: password input, write-only. Once saved shows `••••••••` + "Change key" button.
-- **Test connection**: calls `POST /api/settings/providers/test`. On success shows green checkmark (persistent until key is edited). On failure shows warning but still allows saving.
+- **Provider selector**: two live buttons — Anthropic and OpenAI. Clicking switches the key field shown; the active provider only changes on Save.
+- **API key field**: password input, write-only. Once saved shows `••••••••` + "Change key" button. Placeholder adjusts per provider (`sk-ant-...` vs `sk-...`).
+- **Test connection**: tests whichever provider is currently selected in the UI.
+- **Save**: saves the key for the selected provider, marks it active, deactivates the other, then closes the modal.
+- **Export CSV**: triggers `GET /api/resources/export` — downloads all resources as a CSV file.
+- **Import CSV**: browser file picker → `POST /api/resources/import` → toast with counts (added / duplicates skipped / bad rows skipped). On success, the main grid refreshes automatically via `onImportComplete` callback.
 
-### Adding OpenAI later
-1. Add `openai` package
-2. Create `src/lib/ai/openai.ts` implementing the same `AIProvider` interface
-3. Enable the OpenAI option in `SettingsModal.tsx` (remove "Coming soon" disabled state)
-4. Register it in `src/lib/ai/index.ts` factory
+## Export / Import
+
+### Export (`GET /api/resources/export`)
+- Returns all resources ordered by `date_added ASC` as a CSV file attachment.
+- Filename includes today's date: `aihub-export-YYYY-MM-DD.csv`.
+- Columns: `title, url, description, resource_type, tags, submitted_by, date_added`.
+- Tags are pipe-separated in a single column (e.g. `python|llm|tutorial`).
+- Fields are RFC 4180 quoted when they contain commas, newlines, or double-quotes.
+- Resource IDs are not included.
+
+### Import (`POST /api/resources/import`)
+- Accepts `multipart/form-data` with a `file` field containing the CSV.
+- Validates that all required headers are present: `title, url, description, resource_type, tags, submitted_by, date_added`.
+- Per-row validation: skips rows missing required fields (`title`, `url`, `description`, `resource_type`) or with an invalid `resource_type`.
+- Skips rows whose URL already exists in the database (duplicate check).
+- Preserves the original `date_added` from the CSV.
+- Logs each inserted row to `audit_log` with action `'import'`.
+- Returns `{ added, skipped_duplicates, skipped_bad_rows }`.
+- The entire import runs in a single SQLite transaction.
 
 ## shadcn/ui — Important: uses @base-ui/react, not Radix
 
@@ -145,7 +170,8 @@ Hybrid layout:
 - **Dark mode**: `#1F2937` cards on `#111827` charcoal
 - **Accent**: amber `#F57C00` / `#FB923C` for buttons, badges, tag hover states
 - Theme persisted in `localStorage`, toggled by `ThemeToggle` component
+- The hero search bar is pinned white in both themes (`dark:bg-white dark:text-gray-900`) because it sits on a coloured gradient background.
 
 ## Deployment (IIS)
 
-The app runs as a Node.js process behind an IIS reverse proxy. After `npm run build`, start with `npm start`. The `data/` directory (containing `aihub.db`) must be writable by the Node.js process. For company-specific branding, create `.env.local` with `NEXT_PUBLIC_SITE_NAME="Company AI Hub"` — no code changes needed.
+The app runs as a Node.js process behind an IIS reverse proxy. After `npm run build`, start with `npm start`. The `data/` directory (containing `aihub.db`) must be writable by the Node.js process. For company-specific branding, create `.env.local` with `NEXT_PUBLIC_SITE_NAME="Company AI Hub"` — no code changes needed. See `README.md` for full step-by-step Windows Server / IIS deployment instructions including NSSM service setup and `web.config`.
