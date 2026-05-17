@@ -241,7 +241,7 @@ export default function AddResourceModal({ open, onClose, onAdded, onUpdated, ex
 
           <div className="space-y-1.5">
             <Label htmlFor="submittedBy">Your name <span className="text-muted-foreground text-xs">(optional)</span></Label>
-            <Input id="submittedBy" value={submittedBy} onChange={e => setSubmittedBy(e.target.value)} placeholder="e.g. Wayne" />
+            <Input id="submittedBy" value={submittedBy} onChange={e => setSubmittedBy(e.target.value)} placeholder="Anonymous" />
           </div>
 
           {error && <p className="text-sm text-destructive">{error}</p>}

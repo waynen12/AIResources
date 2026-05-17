@@ -284,6 +284,7 @@ export default function Home() {
           setAiEnabled(enabled);
           setAiHasProvider(hasProvider);
         }}
+        onImportComplete={() => fetchResources('', 1, true)}
       />
     </div>
   );

@@ -5,7 +5,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { CheckCircle, AlertTriangle, Loader2 } from 'lucide-react';
+import { CheckCircle, AlertTriangle, Loader2, Download, Upload } from 'lucide-react';
 import { toast } from 'sonner';
 
 type ProviderInfo = {
@@ -18,9 +18,10 @@ type Props = {
   open: boolean;
   onClose: () => void;
   onAiStatusChange: (enabled: boolean, hasProvider: boolean) => void;
+  onImportComplete?: () => void;
 };
 
-export default function SettingsModal({ open, onClose, onAiStatusChange }: Props) {
+export default function SettingsModal({ open, onClose, onAiStatusChange, onImportComplete }: Props) {
   const [aiEnabled, setAiEnabled] = useState(false);
   const [provider, setProvider] = useState<ProviderInfo | null>(null);
   const [apiKeyInput, setApiKeyInput] = useState('');
@@ -28,6 +29,7 @@ export default function SettingsModal({ open, onClose, onAiStatusChange }: Props
   const [testStatus, setTestStatus] = useState<'idle' | 'testing' | 'ok' | 'fail'>('idle');
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [importing, setImporting] = useState(false);
 
   useEffect(() => {
     if (!open) return;
@@ -112,6 +114,7 @@ export default function SettingsModal({ open, onClose, onAiStatusChange }: Props
       setTestStatus('idle');
       onAiStatusChange(aiEnabled, saved.has_key);
       toast.success('Settings saved');
+      onClose();
     } catch {
       toast.error('Failed to save settings');
     } finally {
@@ -232,6 +235,66 @@ export default function SettingsModal({ open, onClose, onAiStatusChange }: Props
                   <AlertTriangle className="h-4 w-4" /> Check key
                 </span>
               )}
+            </div>
+
+            {/* Export / Import */}
+            <div className="space-y-3 pt-2 border-t">
+              <p className="text-sm font-medium">Data</p>
+              <div className="flex gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="flex-1"
+                  onClick={() => { window.location.href = '/api/resources/export'; }}
+                >
+                  <Download className="h-3.5 w-3.5 mr-1.5" />
+                  Export CSV
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="flex-1"
+                  disabled={importing}
+                  onClick={() => {
+                    const input = document.createElement('input');
+                    input.type = 'file';
+                    input.accept = '.csv,text/csv';
+                    input.onchange = async () => {
+                      const file = input.files?.[0];
+                      if (!file) return;
+                      setImporting(true);
+                      try {
+                        const body = new FormData();
+                        body.append('file', file);
+                        const res = await fetch('/api/resources/import', { method: 'POST', body });
+                        const data = await res.json();
+                        if (!res.ok) {
+                          toast.error(data.error ?? 'Import failed');
+                          return;
+                        }
+                        const { added, skipped_duplicates, skipped_bad_rows } = data;
+                        const parts = [`${added} added`];
+                        if (skipped_duplicates > 0) parts.push(`${skipped_duplicates} duplicate${skipped_duplicates > 1 ? 's' : ''} skipped`);
+                        if (skipped_bad_rows > 0) parts.push(`${skipped_bad_rows} bad row${skipped_bad_rows > 1 ? 's' : ''} skipped`);
+                        toast.success(`Import complete: ${parts.join(', ')}`);
+                        if (added > 0) onImportComplete?.();
+                      } catch {
+                        toast.error('Import failed — check your connection');
+                      } finally {
+                        setImporting(false);
+                      }
+                    };
+                    input.click();
+                  }}
+                >
+                  {importing
+                    ? <><Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" />Importing...</>
+                    : <><Upload className="h-3.5 w-3.5 mr-1.5" />Import CSV</>
+                  }
+                </Button>
+              </div>
             </div>
 
             {/* Footer */}
