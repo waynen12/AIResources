@@ -1,12 +1,14 @@
 'use client';
 
 import { useEffect, useState, useCallback, useRef } from 'react';
-import { Search, Plus } from 'lucide-react';
+import { Search, Plus, Settings, Sparkles, Loader2 } from 'lucide-react';
+import { toast } from 'sonner';
 import { Input } from '@/components/ui/input';
 import ResourceCard from '@/components/ResourceCard';
 import AddResourceModal from '@/components/AddResourceModal';
 import DeleteConfirmModal from '@/components/DeleteConfirmModal';
 import ThemeToggle from '@/components/ThemeToggle';
+import SettingsModal from '@/components/SettingsModal';
 import type { Resource } from '@/lib/db';
 
 const SITE_NAME = process.env.NEXT_PUBLIC_SITE_NAME ?? 'AI Hub';
@@ -30,6 +32,12 @@ export default function Home() {
   const [editingResource, setEditingResource] = useState<Resource | null>(null);
   const [deletingResource, setDeletingResource] = useState<Resource | null>(null);
   const [existingTags, setExistingTags] = useState<string[]>([]);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [aiEnabled, setAiEnabled] = useState(false);
+  const [aiHasProvider, setAiHasProvider] = useState(false);
+  const [smartMode, setSmartMode] = useState(false);
+  const [aiSearching, setAiSearching] = useState(false);
+  const [aiSearchActive, setAiSearchActive] = useState(false);
   const searchTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const loaderRef = useRef<HTMLDivElement>(null);
 
@@ -57,16 +65,49 @@ export default function Home() {
   useEffect(() => {
     fetchResources('', 1, true);
     fetchTags();
+    Promise.all([
+      fetch('/api/settings').then(r => r.json()),
+      fetch('/api/settings/providers').then(r => r.json()),
+    ]).then(([settings, providers]: [{ ai_enabled: boolean }, { has_key: boolean }[]]) => {
+      setAiEnabled(settings.ai_enabled);
+      setAiHasProvider(providers.some(p => p.has_key));
+    }).catch(() => { /* non-fatal */ });
   }, [fetchResources]);
 
   useEffect(() => {
     if (initialLoad) return;
+    if (smartMode) return;
     if (searchTimeout.current) clearTimeout(searchTimeout.current);
     searchTimeout.current = setTimeout(() => {
       fetchResources(search, 1, true);
     }, 250);
     return () => { if (searchTimeout.current) clearTimeout(searchTimeout.current); };
-  }, [search, fetchResources, initialLoad]);
+  }, [search, fetchResources, initialLoad, smartMode]);
+
+  async function handleSmartSearch() {
+    if (!search.trim() || aiSearching) return;
+    setAiSearching(true);
+    try {
+      const res = await fetch('/api/ai/search', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query: search.trim() }),
+      });
+      if (!res.ok) {
+        toast.error('AI search failed — try keyword search instead');
+        return;
+      }
+      const data = await res.json() as { resources: Resource[] };
+      setResources(data.resources);
+      setTotal(data.resources.length);
+      setHasMore(false);
+      setAiSearchActive(true);
+    } catch {
+      toast.error('AI search failed — check your connection');
+    } finally {
+      setAiSearching(false);
+    }
+  }
 
   useEffect(() => {
     const observer = new IntersectionObserver(entries => {
@@ -110,7 +151,16 @@ export default function Home() {
         style={{ background: 'rgba(0,0,0,0.15)', backdropFilter: 'blur(8px)' }}
       >
         <span className="text-white font-bold text-xl tracking-tight">{SITE_NAME}</span>
-        <ThemeToggle />
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setSettingsOpen(true)}
+            className="rounded-full p-1.5 text-white/80 hover:text-white hover:bg-white/10 transition-colors"
+            aria-label="Settings"
+          >
+            <Settings className="h-5 w-5" />
+          </button>
+          <ThemeToggle />
+        </div>
       </nav>
 
       {/* Hero */}
@@ -124,17 +174,55 @@ export default function Home() {
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400 z-10" />
           <Input
             value={search}
-            onChange={e => setSearch(e.target.value)}
-            placeholder="Search by title, description or tag..."
-            className="pl-9 bg-white border-none shadow-lg h-11 text-sm"
+            onChange={e => {
+              setSearch(e.target.value);
+              if (smartMode && aiSearchActive) {
+                setAiSearchActive(false);
+                fetchResources('', 1, true);
+              }
+            }}
+            onKeyDown={e => {
+              if (e.key === 'Enter' && smartMode && search.trim()) {
+                handleSmartSearch();
+              }
+            }}
+            placeholder={smartMode ? 'Ask anything — press Enter to search...' : 'Search by title, description or tag...'}
+            disabled={aiSearching}
+            className="pl-9 pr-11 bg-white border-none shadow-lg h-11 text-sm"
           />
+          {aiEnabled && aiHasProvider && (
+            <button
+              type="button"
+              onClick={() => {
+                if (smartMode) {
+                  setSmartMode(false);
+                  setAiSearchActive(false);
+                  fetchResources(search, 1, true);
+                } else {
+                  setSmartMode(true);
+                  if (search) fetchResources('', 1, true);
+                }
+              }}
+              title={smartMode ? 'Switch to keyword search' : 'Switch to AI smart search'}
+              className={`absolute right-2 top-1/2 -translate-y-1/2 rounded-md p-1.5 transition-colors ${
+                smartMode ? 'text-amber-500 bg-amber-50' : 'text-gray-400 hover:text-gray-600 hover:bg-gray-100'
+              }`}
+            >
+              {aiSearching
+                ? <Loader2 className="h-4 w-4 animate-spin" />
+                : <Sparkles className="h-4 w-4" />}
+            </button>
+          )}
         </div>
       </div>
 
       {/* Toolbar */}
       <div className="flex items-center justify-between px-6 py-4 max-w-6xl mx-auto">
-        <span className="text-sm text-muted-foreground">
-          {initialLoad ? '\u00a0' : `${total} resource${total !== 1 ? 's' : ''}${search ? ` matching "${search}"` : ''}`}
+        <span className="text-sm text-muted-foreground flex items-center gap-1.5">
+          {initialLoad ? '\u00a0' : aiSearchActive
+            ? <><Sparkles className="h-3.5 w-3.5 text-amber-500" />{total} AI result{total !== 1 ? 's' : ''} for &ldquo;{search}&rdquo;</>
+            : `${total} resource${total !== 1 ? 's' : ''}${search ? ` matching "${search}"` : ''}`
+          }
         </span>
         <button
           onClick={() => { setEditingResource(null); setModalOpen(true); }}
@@ -179,12 +267,23 @@ export default function Home() {
         onUpdated={handleResourceUpdated}
         existingTags={existingTags}
         editing={editingResource}
+        aiEnabled={aiEnabled}
+        aiHasProvider={aiHasProvider}
       />
 
       <DeleteConfirmModal
         resource={deletingResource}
         onClose={() => setDeletingResource(null)}
         onDeleted={handleResourceDeleted}
+      />
+
+      <SettingsModal
+        open={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+        onAiStatusChange={(enabled, hasProvider) => {
+          setAiEnabled(enabled);
+          setAiHasProvider(hasProvider);
+        }}
       />
     </div>
   );

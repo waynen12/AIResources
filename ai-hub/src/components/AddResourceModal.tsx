@@ -7,7 +7,8 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
-import { X } from 'lucide-react';
+import { X, Sparkles, Loader2 } from 'lucide-react';
+import { toast } from 'sonner';
 import type { Resource } from '@/lib/db';
 
 const RESOURCE_TYPES = ['YouTube', 'Article', 'Course', 'Documentation', 'Tool', 'Other'];
@@ -19,9 +20,11 @@ type Props = {
   onUpdated: (resource: Resource) => void;
   existingTags: string[];
   editing?: Resource | null;
+  aiEnabled?: boolean;
+  aiHasProvider?: boolean;
 };
 
-export default function AddResourceModal({ open, onClose, onAdded, onUpdated, existingTags, editing }: Props) {
+export default function AddResourceModal({ open, onClose, onAdded, onUpdated, existingTags, editing, aiEnabled = false, aiHasProvider = false }: Props) {
   const [title, setTitle] = useState('');
   const [url, setUrl] = useState('');
   const [description, setDescription] = useState('');
@@ -31,6 +34,7 @@ export default function AddResourceModal({ open, onClose, onAdded, onUpdated, ex
   const [tagInput, setTagInput] = useState('');
   const [tagSuggestions, setTagSuggestions] = useState<string[]>([]);
   const [submitting, setSubmitting] = useState(false);
+  const [autofilling, setAutofilling] = useState(false);
   const [error, setError] = useState('');
   const tagInputRef = useRef<HTMLInputElement>(null);
 
@@ -75,6 +79,33 @@ export default function AddResourceModal({ open, onClose, onAdded, onUpdated, ex
       addTag(tagInput);
     } else if (e.key === 'Backspace' && !tagInput && tags.length) {
       setTags(tags.slice(0, -1));
+    }
+  }
+
+  async function handleAutofill() {
+    if (!url.trim()) return;
+    setAutofilling(true);
+    try {
+      const res = await fetch('/api/ai/autofill', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: url.trim() }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        toast.error(data.error ?? 'Auto-fill failed');
+        return;
+      }
+      if (data.title) setTitle(data.title);
+      if (data.description) setDescription(data.description);
+      if (data.resource_type) setResourceType(data.resource_type);
+      if (Array.isArray(data.tags) && data.tags.length > 0) {
+        setTags(data.tags.slice(0, 5));
+      }
+    } catch {
+      toast.error('Could not reach the AI provider — check your connection');
+    } finally {
+      setAutofilling(false);
     }
   }
 
@@ -125,7 +156,22 @@ export default function AddResourceModal({ open, onClose, onAdded, onUpdated, ex
 
           <div className="space-y-1.5">
             <Label htmlFor="url">URL <span className="text-destructive">*</span></Label>
-            <Input id="url" type="url" value={url} onChange={e => setUrl(e.target.value)} placeholder="https://..." required />
+            <div className="flex gap-2">
+              <Input id="url" type="url" value={url} onChange={e => setUrl(e.target.value)} placeholder="https://..." required className="flex-1" />
+              {aiEnabled && (
+                <button
+                  type="button"
+                  onClick={handleAutofill}
+                  disabled={autofilling || !url.trim() || !aiHasProvider}
+                  title={aiHasProvider ? 'Auto-fill from URL' : 'Configure an AI provider in Settings to use this feature'}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-amber-400 bg-amber-50 text-amber-700 text-xs font-medium hover:bg-amber-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors dark:bg-amber-950/30 dark:text-amber-300 dark:border-amber-600 dark:hover:bg-amber-950/50 whitespace-nowrap"
+                >
+                  {autofilling
+                    ? <><Loader2 className="h-3.5 w-3.5 animate-spin" />Filling...</>
+                    : <><Sparkles className="h-3.5 w-3.5" />Auto-fill</>}
+                </button>
+              )}
+            </div>
           </div>
 
           <div className="space-y-1.5">
