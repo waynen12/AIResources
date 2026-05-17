@@ -1,6 +1,7 @@
 import { getDb } from '@/lib/db';
 import { decrypt } from '@/lib/encryption';
 import { AnthropicProvider } from './anthropic';
+import { OpenAIProvider } from './openai';
 import type { AIProvider } from './provider';
 
 export function getAIProvider(): AIProvider | null {
@@ -17,9 +18,8 @@ export function getAIProvider(): AIProvider | null {
 
   try {
     const apiKey = decrypt(row.encrypted_api_key);
-    if (row.provider_name === 'anthropic') {
-      return new AnthropicProvider(apiKey);
-    }
+    if (row.provider_name === 'anthropic') return new AnthropicProvider(apiKey);
+    if (row.provider_name === 'openai') return new OpenAIProvider(apiKey);
   } catch {
     return null;
   }

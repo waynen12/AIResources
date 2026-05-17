@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import Anthropic from '@anthropic-ai/sdk';
+import OpenAI from 'openai';
 import { getDb } from '@/lib/db';
 import { decrypt, encrypt } from '@/lib/encryption';
 
@@ -33,6 +34,22 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'No API key to test' }, { status: 400 });
   }
 
+  function persistKey(name: string, key: string) {
+    try {
+      const db = getDb();
+      const encryptedKey = encrypt(key);
+      db.prepare(`
+        INSERT INTO ai_providers (provider_name, encrypted_api_key, is_active, updated_at)
+        VALUES (?, ?, 1, datetime('now'))
+        ON CONFLICT(provider_name) DO UPDATE SET
+          encrypted_api_key = excluded.encrypted_api_key,
+          updated_at = datetime('now')
+      `).run(name, encryptedKey);
+    } catch {
+      /* non-fatal — key already tested OK */
+    }
+  }
+
   if (provider_name === 'anthropic') {
     try {
       const client = new Anthropic({ apiKey: keyToTest });
@@ -41,30 +58,35 @@ export async function POST(request: NextRequest) {
         max_tokens: 16,
         messages: [{ role: 'user', content: 'ping' }],
       });
-
-      if (api_key?.trim()) {
-        try {
-          const db = getDb();
-          const encryptedKey = encrypt(api_key.trim());
-          db.prepare(`
-            INSERT INTO ai_providers (provider_name, encrypted_api_key, is_active, updated_at)
-            VALUES (?, ?, 1, datetime('now'))
-            ON CONFLICT(provider_name) DO UPDATE SET
-              encrypted_api_key = excluded.encrypted_api_key,
-              updated_at = datetime('now')
-          `).run(provider_name, encryptedKey);
-        } catch {
-          /* non-fatal — key already tested OK */
-        }
-      }
-
+      if (api_key?.trim()) persistKey('anthropic', api_key.trim());
       return NextResponse.json({ success: true });
     } catch (err) {
       if (err instanceof Anthropic.AuthenticationError) {
         return NextResponse.json({ error: 'Invalid API key' }, { status: 401 });
       }
       if (err instanceof Anthropic.PermissionDeniedError) {
-        return NextResponse.json({ error: 'API account balance exhausted' }, { status: 402 });
+        return NextResponse.json({ error: 'API quota exhausted — check your account balance' }, { status: 402 });
+      }
+      return NextResponse.json({ error: 'Could not reach the AI provider' }, { status: 503 });
+    }
+  }
+
+  if (provider_name === 'openai') {
+    try {
+      const client = new OpenAI({ apiKey: keyToTest });
+      await client.chat.completions.create({
+        model: 'gpt-4o',
+        max_tokens: 16,
+        messages: [{ role: 'user', content: 'ping' }],
+      });
+      if (api_key?.trim()) persistKey('openai', api_key.trim());
+      return NextResponse.json({ success: true });
+    } catch (err) {
+      if (err instanceof OpenAI.AuthenticationError) {
+        return NextResponse.json({ error: 'Invalid API key' }, { status: 401 });
+      }
+      if (err instanceof OpenAI.RateLimitError) {
+        return NextResponse.json({ error: 'API quota exhausted — check your account balance' }, { status: 402 });
       }
       return NextResponse.json({ error: 'Could not reach the AI provider' }, { status: 503 });
     }

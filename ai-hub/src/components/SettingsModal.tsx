@@ -14,6 +14,8 @@ type ProviderInfo = {
   has_key: boolean;
 };
 
+type ProviderName = 'anthropic' | 'openai';
+
 type Props = {
   open: boolean;
   onClose: () => void;
@@ -23,7 +25,8 @@ type Props = {
 
 export default function SettingsModal({ open, onClose, onAiStatusChange, onImportComplete }: Props) {
   const [aiEnabled, setAiEnabled] = useState(false);
-  const [provider, setProvider] = useState<ProviderInfo | null>(null);
+  const [providers, setProviders] = useState<ProviderInfo[]>([]);
+  const [selectedName, setSelectedName] = useState<ProviderName>('anthropic');
   const [apiKeyInput, setApiKeyInput] = useState('');
   const [editingKey, setEditingKey] = useState(false);
   const [testStatus, setTestStatus] = useState<'idle' | 'testing' | 'ok' | 'fail'>('idle');
@@ -31,23 +34,37 @@ export default function SettingsModal({ open, onClose, onAiStatusChange, onImpor
   const [loading, setLoading] = useState(false);
   const [importing, setImporting] = useState(false);
 
+  const selectedProvider = providers.find(p => p.provider_name === selectedName) ?? null;
+
   useEffect(() => {
     if (!open) return;
     setLoading(true);
     Promise.all([
       fetch('/api/settings').then(r => r.json()),
       fetch('/api/settings/providers').then(r => r.json()),
-    ]).then(([settings, providers]: [{ ai_enabled: boolean }, ProviderInfo[]]) => {
+    ]).then(([settings, providerList]: [{ ai_enabled: boolean }, ProviderInfo[]]) => {
       setAiEnabled(settings.ai_enabled);
-      const anthropic = providers.find(p => p.provider_name === 'anthropic') ?? null;
-      setProvider(anthropic);
+      setProviders(providerList);
+      const active = providerList.find(p => p.is_active);
+      const initial: ProviderName = active?.provider_name === 'openai' ? 'openai' : 'anthropic';
+      setSelectedName(initial);
+      const initialProvider = providerList.find(p => p.provider_name === initial) ?? null;
       setApiKeyInput('');
-      setEditingKey(!anthropic?.has_key);
+      setEditingKey(!initialProvider?.has_key);
       setTestStatus('idle');
     }).catch(() => {
       toast.error('Failed to load settings');
     }).finally(() => setLoading(false));
   }, [open]);
+
+  function handleSelectProvider(name: ProviderName) {
+    if (name === selectedName) return;
+    setSelectedName(name);
+    const p = providers.find(pr => pr.provider_name === name) ?? null;
+    setApiKeyInput('');
+    setEditingKey(!p?.has_key);
+    setTestStatus('idle');
+  }
 
   async function handleToggleAi() {
     const next = !aiEnabled;
@@ -58,7 +75,7 @@ export default function SettingsModal({ open, onClose, onAiStatusChange, onImpor
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ai_enabled: next }),
       });
-      onAiStatusChange(next, !!provider?.has_key || !!apiKeyInput);
+      onAiStatusChange(next, providers.some(p => p.has_key));
     } catch {
       setAiEnabled(!next);
       toast.error('Failed to update AI setting');
@@ -66,7 +83,7 @@ export default function SettingsModal({ open, onClose, onAiStatusChange, onImpor
   }
 
   async function handleTestConnection() {
-    if (!apiKeyInput.trim() && !provider?.has_key) {
+    if (!apiKeyInput.trim() && !selectedProvider?.has_key) {
       toast.error('Enter an API key first');
       return;
     }
@@ -75,7 +92,7 @@ export default function SettingsModal({ open, onClose, onAiStatusChange, onImpor
       const res = await fetch('/api/settings/providers/test', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ provider_name: 'anthropic', api_key: apiKeyInput.trim() || undefined }),
+        body: JSON.stringify({ provider_name: selectedName, api_key: apiKeyInput.trim() || undefined }),
       });
       if (res.ok) {
         setTestStatus('ok');
@@ -94,7 +111,7 @@ export default function SettingsModal({ open, onClose, onAiStatusChange, onImpor
   async function handleSave() {
     setSaving(true);
     try {
-      const body: Record<string, string> = { provider_name: 'anthropic' };
+      const body: Record<string, string> = { provider_name: selectedName };
       if (apiKeyInput.trim()) body.api_key = apiKeyInput.trim();
 
       const res = await fetch('/api/settings/providers', {
@@ -108,7 +125,12 @@ export default function SettingsModal({ open, onClose, onAiStatusChange, onImpor
         return;
       }
       const saved: ProviderInfo = await res.json();
-      setProvider(saved);
+      setProviders(prev => {
+        const updated = prev.filter(p => p.provider_name !== saved.provider_name);
+        return [...updated, { ...saved, is_active: true }].map(p =>
+          p.provider_name === saved.provider_name ? p : { ...p, is_active: false }
+        );
+      });
       setApiKeyInput('');
       setEditingKey(false);
       setTestStatus('idle');
@@ -121,6 +143,16 @@ export default function SettingsModal({ open, onClose, onAiStatusChange, onImpor
       setSaving(false);
     }
   }
+
+  const providerLabels: Record<ProviderName, string> = {
+    anthropic: 'Anthropic',
+    openai: 'OpenAI',
+  };
+
+  const keyPlaceholders: Record<ProviderName, string> = {
+    anthropic: 'sk-ant-...',
+    openai: 'sk-...',
+  };
 
   return (
     <Dialog
@@ -158,31 +190,31 @@ export default function SettingsModal({ open, onClose, onAiStatusChange, onImpor
               </button>
             </div>
 
-            {/* Provider */}
+            {/* Provider selector */}
             <div className="space-y-3">
               <Label>AI Provider</Label>
               <div className="flex gap-2">
-                <button
-                  type="button"
-                  className="flex-1 rounded-md border border-amber-500 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-800 dark:bg-amber-950/30 dark:text-amber-300 dark:border-amber-600"
-                >
-                  Anthropic
-                </button>
-                <button
-                  type="button"
-                  disabled
-                  className="flex-1 rounded-md border border-input px-3 py-2 text-sm text-muted-foreground opacity-50 cursor-not-allowed"
-                  title="Coming soon"
-                >
-                  OpenAI <span className="text-xs">(coming soon)</span>
-                </button>
+                {(['anthropic', 'openai'] as ProviderName[]).map(name => (
+                  <button
+                    key={name}
+                    type="button"
+                    onClick={() => handleSelectProvider(name)}
+                    className={`flex-1 rounded-md border px-3 py-2 text-sm font-medium transition-colors ${
+                      selectedName === name
+                        ? 'border-amber-500 bg-amber-50 text-amber-800 dark:bg-amber-950/30 dark:text-amber-300 dark:border-amber-600'
+                        : 'border-input text-muted-foreground hover:border-amber-400 hover:text-foreground'
+                    }`}
+                  >
+                    {providerLabels[name]}
+                  </button>
+                ))}
               </div>
             </div>
 
             {/* API key */}
             <div className="space-y-1.5">
-              <Label htmlFor="api-key">API Key</Label>
-              {!editingKey && provider?.has_key ? (
+              <Label htmlFor="api-key">{providerLabels[selectedName]} API Key</Label>
+              {!editingKey && selectedProvider?.has_key ? (
                 <div className="flex items-center gap-2">
                   <Input
                     id="api-key"
@@ -206,7 +238,7 @@ export default function SettingsModal({ open, onClose, onAiStatusChange, onImpor
                   type="password"
                   value={apiKeyInput}
                   onChange={e => { setApiKeyInput(e.target.value); setTestStatus('idle'); }}
-                  placeholder="sk-ant-..."
+                  placeholder={keyPlaceholders[selectedName]}
                   autoComplete="off"
                 />
               )}
@@ -303,7 +335,7 @@ export default function SettingsModal({ open, onClose, onAiStatusChange, onImpor
               <Button
                 type="button"
                 onClick={handleSave}
-                disabled={saving || (!apiKeyInput.trim() && !provider?.has_key)}
+                disabled={saving || (!apiKeyInput.trim() && !selectedProvider?.has_key)}
                 style={{ background: '#F57C00' }}
                 className="text-white hover:brightness-110"
               >

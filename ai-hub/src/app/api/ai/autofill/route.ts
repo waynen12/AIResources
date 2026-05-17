@@ -24,7 +24,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid API key — check your Settings' }, { status: 401 });
     }
     if (message.includes('402') || message.toLowerCase().includes('quota') || message.toLowerCase().includes('balance')) {
-      return NextResponse.json({ error: 'API account balance exhausted — top up your Anthropic account' }, { status: 402 });
+      return NextResponse.json({ error: 'API quota exhausted — check your account balance' }, { status: 402 });
     }
     if (message.toLowerCase().includes('fetch') || message.includes('HTTP ') || message.includes('abort')) {
       return NextResponse.json({ error: 'Could not fetch that URL — check the link is publicly accessible' }, { status: 422 });
