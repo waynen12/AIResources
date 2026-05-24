@@ -1,6 +1,7 @@
 'use client';
 
-import { ExternalLink, Pencil, Trash2 } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { ChevronDown, ExternalLink, Pencil, Trash2 } from 'lucide-react';
 import type { Resource } from '@/lib/db';
 
 const TYPE_COLOURS: Record<string, string> = {
@@ -33,6 +34,19 @@ type Props = {
 
 export default function ResourceCard({ resource, onTagClick, onEdit, onDelete }: Props) {
   const typeClass = TYPE_COLOURS[resource.resource_type] ?? TYPE_COLOURS.Other;
+  const descRef = useRef<HTMLParagraphElement>(null);
+  const [isTruncated, setIsTruncated] = useState(false);
+  const [isExpanded, setIsExpanded] = useState(false);
+
+  useEffect(() => {
+    const el = descRef.current;
+    if (!el || isExpanded) return;
+    const check = () => setIsTruncated(el.scrollHeight > el.clientHeight);
+    check();
+    const ro = new ResizeObserver(check);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [isExpanded]);
 
   return (
     <div className="bg-card border border-border rounded-2xl p-5 flex flex-col gap-3 shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all duration-200">
@@ -71,9 +85,21 @@ export default function ResourceCard({ resource, onTagClick, onEdit, onDelete }:
         <h3 className="font-semibold text-base leading-snug text-card-foreground line-clamp-2">
           {resource.title}
         </h3>
-        <p className="text-sm text-muted-foreground mt-1 line-clamp-3 leading-relaxed">
+        <p
+          ref={descRef}
+          className={`text-sm text-muted-foreground mt-1 leading-relaxed${isExpanded ? '' : ' line-clamp-3'}`}
+        >
           {resource.description}
         </p>
+        {isTruncated && (
+          <button
+            onClick={() => setIsExpanded(e => !e)}
+            className="flex items-center gap-0.5 text-xs text-muted-foreground hover:text-amber-500 transition-colors mt-1"
+          >
+            {isExpanded ? 'Show less' : 'Show more'}
+            <ChevronDown className={`h-3 w-3 transition-transform${isExpanded ? ' rotate-180' : ''}`} />
+          </button>
+        )}
       </div>
 
       {resource.tags.length > 0 && (
