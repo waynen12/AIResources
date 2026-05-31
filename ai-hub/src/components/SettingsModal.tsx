@@ -5,8 +5,9 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { CheckCircle, AlertTriangle, Loader2, Download, Upload } from 'lucide-react';
+import { CheckCircle, AlertTriangle, Loader2, Download, Upload, Users } from 'lucide-react';
 import { toast } from 'sonner';
+import AccountsModal from '@/components/AccountsModal';
 
 type ProviderInfo = {
   provider_name: string;
@@ -33,16 +34,22 @@ export default function SettingsModal({ open, onClose, onAiStatusChange, onImpor
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(false);
   const [importing, setImporting] = useState(false);
+  const [accountsOpen, setAccountsOpen] = useState(false);
+  const [hasNewsToken, setHasNewsToken] = useState(false);
+  const [newsToken, setNewsToken] = useState('');
+  const [regeneratingToken, setRegeneratingToken] = useState(false);
 
   const selectedProvider = providers.find(p => p.provider_name === selectedName) ?? null;
 
   useEffect(() => {
     if (!open) return;
     setLoading(true);
+    setNewsToken('');
     Promise.all([
       fetch('/api/settings').then(r => r.json()),
       fetch('/api/settings/providers').then(r => r.json()),
-    ]).then(([settings, providerList]: [{ ai_enabled: boolean }, ProviderInfo[]]) => {
+      fetch('/api/settings/news-token').then(r => r.json()),
+    ]).then(([settings, providerList, newsTokenInfo]: [{ ai_enabled: boolean }, ProviderInfo[], { has_token: boolean }]) => {
       setAiEnabled(settings.ai_enabled);
       setProviders(providerList);
       const active = providerList.find(p => p.is_active);
@@ -52,6 +59,7 @@ export default function SettingsModal({ open, onClose, onAiStatusChange, onImpor
       setApiKeyInput('');
       setEditingKey(!initialProvider?.has_key);
       setTestStatus('idle');
+      setHasNewsToken(newsTokenInfo.has_token);
     }).catch(() => {
       toast.error('Failed to load settings');
     }).finally(() => setLoading(false));
@@ -155,6 +163,8 @@ export default function SettingsModal({ open, onClose, onAiStatusChange, onImpor
   };
 
   return (
+    <>
+    <AccountsModal open={accountsOpen} onClose={() => setAccountsOpen(false)} />
     <Dialog
       open={open}
       onOpenChange={(_open, details) => { if (details.reason === 'close-press') onClose(); }}
@@ -269,6 +279,80 @@ export default function SettingsModal({ open, onClose, onAiStatusChange, onImpor
               )}
             </div>
 
+            {/* Accounts */}
+            <div className="space-y-3 pt-2 border-t">
+              <p className="text-sm font-medium">Accounts</p>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setAccountsOpen(true)}
+              >
+                <Users className="h-3.5 w-3.5 mr-1.5" />
+                Manage Accounts
+              </Button>
+            </div>
+
+            {/* News Ingest Token */}
+            <div className="space-y-3 pt-2 border-t">
+              <div>
+                <p className="text-sm font-medium">News Ingest Token</p>
+                <p className="text-xs text-muted-foreground">Bearer token for the n8n webhook to POST digests</p>
+              </div>
+              {newsToken ? (
+                <div className="space-y-1.5">
+                  <p className="text-xs text-amber-600 dark:text-amber-400">Copy this token — it won&apos;t be shown again.</p>
+                  <div className="flex items-center gap-2">
+                    <Input
+                      value={newsToken}
+                      readOnly
+                      className="flex-1 font-mono text-xs"
+                      onClick={e => (e.target as HTMLInputElement).select()}
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => { navigator.clipboard.writeText(newsToken); toast.success('Token copied'); }}
+                    >
+                      Copy
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex items-center gap-3">
+                  {hasNewsToken && (
+                    <span className="text-sm text-muted-foreground">Token configured</span>
+                  )}
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={regeneratingToken}
+                    onClick={async () => {
+                      setRegeneratingToken(true);
+                      try {
+                        const res = await fetch('/api/settings/news-token', { method: 'POST' });
+                        if (!res.ok) throw new Error();
+                        const data = await res.json() as { token: string };
+                        setNewsToken(data.token);
+                        setHasNewsToken(true);
+                      } catch {
+                        toast.error('Failed to generate token');
+                      } finally {
+                        setRegeneratingToken(false);
+                      }
+                    }}
+                  >
+                    {regeneratingToken
+                      ? <><Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" />Generating...</>
+                      : hasNewsToken ? 'Regenerate' : 'Generate Token'
+                    }
+                  </Button>
+                </div>
+              )}
+            </div>
+
             {/* Export / Import */}
             <div className="space-y-3 pt-2 border-t">
               <p className="text-sm font-medium">Data</p>
@@ -346,5 +430,6 @@ export default function SettingsModal({ open, onClose, onAiStatusChange, onImpor
         )}
       </DialogContent>
     </Dialog>
+    </>
   );
 }

@@ -20,16 +20,16 @@ type Props = {
   onUpdated: (resource: Resource) => void;
   existingTags: string[];
   editing?: Resource | null;
+  initialUrl?: string;
   aiEnabled?: boolean;
   aiHasProvider?: boolean;
 };
 
-export default function AddResourceModal({ open, onClose, onAdded, onUpdated, existingTags, editing, aiEnabled = false, aiHasProvider = false }: Props) {
+export default function AddResourceModal({ open, onClose, onAdded, onUpdated, existingTags, editing, initialUrl, aiEnabled = false, aiHasProvider = false }: Props) {
   const [title, setTitle] = useState('');
   const [url, setUrl] = useState('');
   const [description, setDescription] = useState('');
   const [resourceType, setResourceType] = useState('');
-  const [submittedBy, setSubmittedBy] = useState('');
   const [tags, setTags] = useState<string[]>([]);
   const [tagInput, setTagInput] = useState('');
   const [tagSuggestions, setTagSuggestions] = useState<string[]>([]);
@@ -44,13 +44,16 @@ export default function AddResourceModal({ open, onClose, onAdded, onUpdated, ex
       setUrl(editing.url);
       setDescription(editing.description);
       setResourceType(editing.resource_type);
-      setSubmittedBy(editing.submitted_by ?? '');
       setTags(editing.tags);
+    } else if (open && !editing) {
+      setUrl(initialUrl ?? '');
+      setTitle(''); setDescription(''); setResourceType('');
+      setTags([]); setTagInput(''); setError('');
     } else if (!open) {
       setTitle(''); setUrl(''); setDescription(''); setResourceType('');
-      setSubmittedBy(''); setTags([]); setTagInput(''); setError('');
+      setTags([]); setTagInput(''); setError('');
     }
-  }, [open, editing]);
+  }, [open, editing, initialUrl]);
 
   function handleTagInput(value: string) {
     setTagInput(value);
@@ -118,7 +121,7 @@ export default function AddResourceModal({ open, onClose, onAdded, onUpdated, ex
       const res = await fetch(isEdit ? `/api/resources/${editing.id}` : '/api/resources', {
         method: isEdit ? 'PUT' : 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title, url, description, resource_type: resourceType, tags, submitted_by: submittedBy }),
+        body: JSON.stringify({ title, url, description, resource_type: resourceType, tags }),
       });
       if (!res.ok) {
         const data = await res.json();
@@ -237,11 +240,6 @@ export default function AddResourceModal({ open, onClose, onAdded, onUpdated, ex
                 ))}
               </div>
             )}
-          </div>
-
-          <div className="space-y-1.5">
-            <Label htmlFor="submittedBy">Your name <span className="text-muted-foreground text-xs">(optional)</span></Label>
-            <Input id="submittedBy" value={submittedBy} onChange={e => setSubmittedBy(e.target.value)} placeholder="Anonymous" />
           </div>
 
           {error && <p className="text-sm text-destructive">{error}</p>}

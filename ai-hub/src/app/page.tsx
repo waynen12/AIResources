@@ -1,14 +1,17 @@
 'use client';
 
 import { useEffect, useState, useCallback, useRef } from 'react';
-import { Search, Plus, Settings, Sparkles, Loader2 } from 'lucide-react';
+import { Search, Plus, Settings, Sparkles, Loader2, LogOut, KeyRound } from 'lucide-react';
 import { toast } from 'sonner';
+import { signOut, useSession } from 'next-auth/react';
 import { Input } from '@/components/ui/input';
 import ResourceCard from '@/components/ResourceCard';
 import AddResourceModal from '@/components/AddResourceModal';
 import DeleteConfirmModal from '@/components/DeleteConfirmModal';
 import ThemeToggle from '@/components/ThemeToggle';
 import SettingsModal from '@/components/SettingsModal';
+import ChangePasswordModal from '@/components/ChangePasswordModal';
+import NewsTab from '@/components/NewsTab';
 import type { Resource } from '@/lib/db';
 
 const SITE_NAME = process.env.NEXT_PUBLIC_SITE_NAME ?? 'AI Hub';
@@ -21,6 +24,9 @@ type ApiResponse = {
 };
 
 export default function Home() {
+  const { data: session } = useSession();
+  const isAdmin = session?.user?.role === 'admin';
+
   const [resources, setResources] = useState<Resource[]>([]);
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
@@ -32,7 +38,9 @@ export default function Home() {
   const [editingResource, setEditingResource] = useState<Resource | null>(null);
   const [deletingResource, setDeletingResource] = useState<Resource | null>(null);
   const [existingTags, setExistingTags] = useState<string[]>([]);
+  const [activeTab, setActiveTab] = useState<'resources' | 'news'>('resources');
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [changePasswordOpen, setChangePasswordOpen] = useState(false);
   const [aiEnabled, setAiEnabled] = useState(false);
   const [aiHasProvider, setAiHasProvider] = useState(false);
   const [smartMode, setSmartMode] = useState(false);
@@ -65,14 +73,17 @@ export default function Home() {
   useEffect(() => {
     fetchResources('', 1, true);
     fetchTags();
-    Promise.all([
-      fetch('/api/settings').then(r => r.json()),
-      fetch('/api/settings/providers').then(r => r.json()),
-    ]).then(([settings, providers]: [{ ai_enabled: boolean }, { has_key: boolean }[]]) => {
-      setAiEnabled(settings.ai_enabled);
-      setAiHasProvider(providers.some(p => p.has_key));
-    }).catch(() => { /* non-fatal */ });
-  }, [fetchResources]);
+    // Only admins can access settings endpoints; non-admins leave AI features off.
+    if (isAdmin) {
+      Promise.all([
+        fetch('/api/settings').then(r => r.json()),
+        fetch('/api/settings/providers').then(r => r.json()),
+      ]).then(([settings, providers]: [{ ai_enabled: boolean }, { has_key: boolean }[]]) => {
+        setAiEnabled(settings.ai_enabled);
+        setAiHasProvider(providers.some(p => p.has_key));
+      }).catch(() => { /* non-fatal */ });
+    }
+  }, [fetchResources, isAdmin]);
 
   useEffect(() => {
     if (initialLoad) return;
@@ -143,6 +154,8 @@ export default function Home() {
     setModalOpen(false);
   }
 
+  const accountId = session?.user?.id ? Number(session.user.id) : null;
+
   return (
     <div className="min-h-screen bg-background">
       {/* Nav */}
@@ -152,12 +165,33 @@ export default function Home() {
       >
         <span className="text-white font-bold text-xl tracking-tight">{SITE_NAME}</span>
         <div className="flex items-center gap-2">
+          {session?.user && (
+            <span className="text-white/80 text-sm hidden sm:inline">{session.user.username}</span>
+          )}
           <button
-            onClick={() => setSettingsOpen(true)}
+            onClick={() => setChangePasswordOpen(true)}
             className="rounded-full p-1.5 text-white/80 hover:text-white hover:bg-white/10 transition-colors"
-            aria-label="Settings"
+            aria-label="Change password"
+            title="Change password"
           >
-            <Settings className="h-5 w-5" />
+            <KeyRound className="h-5 w-5" />
+          </button>
+          {isAdmin && (
+            <button
+              onClick={() => setSettingsOpen(true)}
+              className="rounded-full p-1.5 text-white/80 hover:text-white hover:bg-white/10 transition-colors"
+              aria-label="Settings"
+            >
+              <Settings className="h-5 w-5" />
+            </button>
+          )}
+          <button
+            onClick={() => signOut({ callbackUrl: '/login' })}
+            className="rounded-full p-1.5 text-white/80 hover:text-white hover:bg-white/10 transition-colors"
+            aria-label="Sign out"
+            title="Sign out"
+          >
+            <LogOut className="h-5 w-5" />
           </button>
           <ThemeToggle />
         </div>
@@ -216,49 +250,83 @@ export default function Home() {
         </div>
       </div>
 
-      {/* Toolbar */}
-      <div className="flex items-center justify-between px-6 py-4 max-w-6xl mx-auto">
-        <span className="text-sm text-muted-foreground flex items-center gap-1.5">
-          {initialLoad ? '\u00a0' : aiSearchActive
-            ? <><Sparkles className="h-3.5 w-3.5 text-amber-500" />{total} AI result{total !== 1 ? 's' : ''} for &ldquo;{search}&rdquo;</>
-            : `${total} resource${total !== 1 ? 's' : ''}${search ? ` matching "${search}"` : ''}`
-          }
-        </span>
-        <button
-          onClick={() => { setEditingResource(null); setModalOpen(true); }}
-          className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold text-white shadow-md hover:brightness-110 transition-all"
-          style={{ background: '#F57C00' }}
-        >
-          <Plus className="h-4 w-4" />
-          Add Resource
-        </button>
-      </div>
-
-      {/* Grid */}
-      <main className="px-6 pb-16 max-w-6xl mx-auto">
-        {!initialLoad && resources.length === 0 && (
-          <div className="text-center py-24 text-muted-foreground">
-            {search ? `No resources found for "${search}"` : 'No resources yet \u2014 be the first to add one!'}
-          </div>
-        )}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
-          {resources.map(r => (
-            <ResourceCard
-              key={r.id}
-              resource={r}
-              onTagClick={setSearch}
-              onEdit={resource => { setEditingResource(resource); setModalOpen(true); }}
-              onDelete={setDeletingResource}
-            />
+      {/* Tab bar */}
+      <div className="border-b bg-background">
+        <div className="max-w-6xl mx-auto px-6 flex">
+          {(['resources', 'news'] as const).map(tab => (
+            <button
+              key={tab}
+              onClick={() => setActiveTab(tab)}
+              className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
+                activeTab === tab
+                  ? 'border-amber-500 text-amber-600 dark:text-amber-400'
+                  : 'border-transparent text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              {tab === 'resources' ? 'Resources' : 'News'}
+            </button>
           ))}
         </div>
+      </div>
 
-        <div ref={loaderRef} className="h-8 mt-4 flex items-center justify-center">
-          {loading && !initialLoad && (
-            <span className="text-sm text-muted-foreground animate-pulse">Loading more...</span>
-          )}
-        </div>
-      </main>
+      {activeTab === 'news' && (
+        <NewsTab
+          aiEnabled={aiEnabled}
+          aiHasProvider={aiHasProvider}
+          existingTags={existingTags}
+          onResourceAdded={handleResourceAdded}
+        />
+      )}
+
+      {activeTab === 'resources' && (
+        <>
+          {/* Toolbar */}
+          <div className="flex items-center justify-between px-6 py-4 max-w-6xl mx-auto">
+            <span className="text-sm text-muted-foreground flex items-center gap-1.5">
+              {initialLoad ? ' ' : aiSearchActive
+                ? <><Sparkles className="h-3.5 w-3.5 text-amber-500" />{total} AI result{total !== 1 ? 's' : ''} for &ldquo;{search}&rdquo;</>
+                : `${total} resource${total !== 1 ? 's' : ''}${search ? ` matching "${search}"` : ''}`
+              }
+            </span>
+            <button
+              onClick={() => { setEditingResource(null); setModalOpen(true); }}
+              className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold text-white shadow-md hover:brightness-110 transition-all"
+              style={{ background: '#F57C00' }}
+            >
+              <Plus className="h-4 w-4" />
+              Add Resource
+            </button>
+          </div>
+
+          {/* Grid */}
+          <main className="px-6 pb-16 max-w-6xl mx-auto">
+            {!initialLoad && resources.length === 0 && (
+              <div className="text-center py-24 text-muted-foreground">
+                {search ? `No resources found for "${search}"` : 'No resources yet — be the first to add one!'}
+              </div>
+            )}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+              {resources.map(r => (
+                <ResourceCard
+                  key={r.id}
+                  resource={r}
+                  onTagClick={setSearch}
+                  onEdit={resource => { setEditingResource(resource); setModalOpen(true); }}
+                  onDelete={setDeletingResource}
+                  sessionAccountId={accountId}
+                  sessionRole={session?.user?.role ?? 'contributor'}
+                />
+              ))}
+            </div>
+
+            <div ref={loaderRef} className="h-8 mt-4 flex items-center justify-center">
+              {loading && !initialLoad && (
+                <span className="text-sm text-muted-foreground animate-pulse">Loading more...</span>
+              )}
+            </div>
+          </main>
+        </>
+      )}
 
       <AddResourceModal
         open={modalOpen}
@@ -277,14 +345,21 @@ export default function Home() {
         onDeleted={handleResourceDeleted}
       />
 
-      <SettingsModal
-        open={settingsOpen}
-        onClose={() => setSettingsOpen(false)}
-        onAiStatusChange={(enabled, hasProvider) => {
-          setAiEnabled(enabled);
-          setAiHasProvider(hasProvider);
-        }}
-        onImportComplete={() => fetchResources('', 1, true)}
+      {isAdmin && (
+        <SettingsModal
+          open={settingsOpen}
+          onClose={() => setSettingsOpen(false)}
+          onAiStatusChange={(enabled, hasProvider) => {
+            setAiEnabled(enabled);
+            setAiHasProvider(hasProvider);
+          }}
+          onImportComplete={() => fetchResources('', 1, true)}
+        />
+      )}
+
+      <ChangePasswordModal
+        open={changePasswordOpen}
+        onClose={() => setChangePasswordOpen(false)}
       />
     </div>
   );

@@ -30,9 +30,12 @@ type Props = {
   onTagClick: (tag: string) => void;
   onEdit: (resource: Resource) => void;
   onDelete: (resource: Resource) => void;
+  sessionAccountId?: number | null;
+  sessionRole?: 'admin' | 'contributor';
 };
 
-export default function ResourceCard({ resource, onTagClick, onEdit, onDelete }: Props) {
+export default function ResourceCard({ resource, onTagClick, onEdit, onDelete, sessionAccountId, sessionRole }: Props) {
+  const canMutate = sessionRole === 'admin' || resource.account_id === sessionAccountId;
   const typeClass = TYPE_COLOURS[resource.resource_type] ?? TYPE_COLOURS.Other;
   const descRef = useRef<HTMLParagraphElement>(null);
   const [isTruncated, setIsTruncated] = useState(false);
@@ -55,20 +58,24 @@ export default function ResourceCard({ resource, onTagClick, onEdit, onDelete }:
           {resource.resource_type}
         </span>
         <div className="flex items-center gap-1">
-          <button
-            onClick={() => onEdit(resource)}
-            className="text-muted-foreground hover:text-amber-500 transition-colors p-0.5 rounded"
-            aria-label="Edit resource"
-          >
-            <Pencil className="h-3.5 w-3.5" />
-          </button>
-          <button
-            onClick={() => onDelete(resource)}
-            className="text-muted-foreground hover:text-destructive transition-colors p-0.5 rounded"
-            aria-label="Delete resource"
-          >
-            <Trash2 className="h-3.5 w-3.5" />
-          </button>
+          {canMutate && (
+            <button
+              onClick={() => onEdit(resource)}
+              className="text-muted-foreground hover:text-amber-500 transition-colors p-0.5 rounded"
+              aria-label="Edit resource"
+            >
+              <Pencil className="h-3.5 w-3.5" />
+            </button>
+          )}
+          {canMutate && (
+            <button
+              onClick={() => onDelete(resource)}
+              className="text-muted-foreground hover:text-destructive transition-colors p-0.5 rounded"
+              aria-label="Delete resource"
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+            </button>
+          )}
           <a
             href={resource.url}
             target="_blank"

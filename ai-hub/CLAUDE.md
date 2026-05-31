@@ -30,11 +30,18 @@ npm run lint     # ESLint
 
 ### Key files
 - `src/lib/db.ts` — database initialisation, table creation, `rowToResource()` helper
+- `src/lib/auth.ts` — Auth.js v5 config: Credentials provider, bcrypt verify, JWT callbacks (`accountId`, `username`, `role`), rolling 7-day sessions
 - `src/lib/encryption.ts` — AES-256-GCM encrypt/decrypt for API keys stored in DB
 - `src/lib/ai/provider.ts` — `AIProvider` interface: `fetchUrlMetadata`, `suggestTags`, `smartSearch`
 - `src/lib/ai/anthropic.ts` — Anthropic implementation using `claude-haiku-4-5`
 - `src/lib/ai/openai.ts` — OpenAI implementation using `gpt-4o`
 - `src/lib/ai/index.ts` — factory: reads kill switch + active provider from DB, returns `AIProvider | null`
+- `src/proxy.ts` — Next.js 16 proxy (replaces deprecated `middleware.ts`); redirects unauthenticated → `/login`; exempts `/api/auth/*`
+- `src/app/api/auth/[...nextauth]/route.ts` — Auth.js GET/POST handler
+- `src/app/api/account/password/route.ts` — POST: change logged-in user's own password (verifies current, re-hashes new at bcrypt cost 12)
+- `src/app/api/admin/accounts/route.ts` — GET: list all accounts (active + inactive); POST: create account. Admin only.
+- `src/app/api/admin/accounts/[id]/route.ts` — PATCH: `{ action: 'deactivate' | 'reactivate' | 'role', role? }`. Guards: blocks self-deactivation and last-admin deactivation/demotion. Admin only.
+- `src/app/api/admin/accounts/[id]/reset-password/route.ts` — POST: admin sets a new password for any account. Admin only.
 - `src/app/api/resources/route.ts` — GET (paginated + search) and POST handlers
 - `src/app/api/resources/[id]/route.ts` — PUT and DELETE handlers
 - `src/app/api/resources/export/route.ts` — GET: streams full CSV download of all resources
@@ -45,16 +52,22 @@ npm run lint     # ESLint
 - `src/app/api/settings/providers/test/route.ts` — POST test connection for Anthropic or OpenAI; on success with a new key, persists it
 - `src/app/api/ai/autofill/route.ts` — POST `{ url }` → extracted metadata via `fetchUrlMetadata`
 - `src/app/api/ai/search/route.ts` — POST `{ query }` → AI-ranked `Resource[]` via `smartSearch`
+- `src/app/login/page.tsx` — amber/gradient login form with Suspense boundary for `useSearchParams`
 - `src/app/page.tsx` — main page: hero, search bar (keyword + smart mode), infinite scroll card grid
 - `src/components/ResourceCard.tsx` — individual resource card with edit/delete/open actions
 - `src/components/AddResourceModal.tsx` — add/edit modal; includes Auto-fill button when AI is active
+- `src/components/ChangePasswordModal.tsx` — password change dialog; opened via key icon in the nav
 - `src/components/DeleteConfirmModal.tsx` — delete confirmation dialog
-- `src/components/SettingsModal.tsx` — gear icon modal: kill switch, provider selector, API key, test connection, export/import
+- `src/components/SessionProviderWrapper.tsx` — client `SessionProvider` wrapper used in layout
+- `src/components/AccountsModal.tsx` — admin-only modal for full account management: list all accounts, create, deactivate/reactivate, inline role change, inline password reset. Opened via "Manage Accounts" button in SettingsModal.
+- `src/components/SettingsModal.tsx` — gear icon modal: kill switch, provider selector, API key, test connection, export/import, Manage Accounts button (opens AccountsModal)
 - `src/components/ThemeToggle.tsx` — light/dark toggle, persisted in localStorage
+- `scripts/manage-user.ts` — CLI: `--create`, `--deactivate`, `--reset-password` (admin use only)
 
 ### Database schema
 ```sql
-resources    (id, title, url, description, resource_type, tag1..tag5, submitted_by, date_added)
+accounts     (id, username, password_hash, role, is_active, created_at)
+resources    (id, title, url, description, resource_type, tag1..tag5, submitted_by, account_id, date_added)
 audit_log    (id, resource_id, action, ip_address, timestamp)
 ai_providers (id, provider_name, encrypted_api_key, is_active, created_at, updated_at)
 app_settings (key TEXT PRIMARY KEY, value TEXT)
@@ -133,6 +146,7 @@ Model: `gpt-4o` throughout. Uses `response_format: { type: 'json_object' }` on a
 - **Save**: saves the key for the selected provider, marks it active, deactivates the other, then closes the modal.
 - **Export CSV**: triggers `GET /api/resources/export` — downloads all resources as a CSV file.
 - **Import CSV**: browser file picker → `POST /api/resources/import` → toast with counts (added / duplicates skipped / bad rows skipped). On success, the main grid refreshes automatically via `onImportComplete` callback.
+- **Manage Accounts**: opens `AccountsModal` (admin only).
 
 ## Export / Import
 
@@ -175,3 +189,140 @@ Hybrid layout:
 ## Deployment (IIS)
 
 The app runs as a Node.js process behind an IIS reverse proxy. After `npm run build`, start with `npm start`. The `data/` directory (containing `aihub.db`) must be writable by the Node.js process. For company-specific branding, create `.env.local` with `NEXT_PUBLIC_SITE_NAME="Company AI Hub"` — no code changes needed. See `README.md` for full step-by-step Windows Server / IIS deployment instructions including NSSM service setup and `web.config`.
+
+---
+
+## Roadmap — Personal Learning Hub (Digital Ocean)
+
+The app is being extended from an internal QA/team tool into a personal learning hub hosted on a Digital Ocean droplet. Requirements below are high-level and will be refined before implementation begins.
+
+### Deployment target change
+- Move from Windows Server / IIS to a Digital Ocean Linux droplet.
+- Deployment mechanism TBD (PM2 + Nginx reverse proxy is the likely path).
+- The same Next.js + SQLite stack is expected to carry over.
+
+### Authentication
+
+See [`docs/adr/0001-authentication.md`](../docs/adr/0001-authentication.md) for the full decision record.
+
+**Library:** Auth.js v5 (`next-auth`) with the Credentials provider. JWT sessions only (Auth.js enforces this with Credentials — DB sessions are not available). Rolling 7-day max age (`maxAge: 60 * 60 * 24 * 7`, `updateAge: 60 * 60 * 24`).
+
+**Roles:** `admin` | `contributor`. Admins have full access. Contributors can only edit/delete their own Resources.
+
+**Visibility:** Fully private. Next.js middleware redirects all unauthenticated requests to `/login`. No public read access.
+
+**Database schema additions:**
+```sql
+accounts (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  username    TEXT UNIQUE NOT NULL,
+  password_hash TEXT NOT NULL,        -- bcrypt
+  role        TEXT NOT NULL CHECK(role IN ('admin', 'contributor')),
+  is_active   INTEGER NOT NULL DEFAULT 1,
+  created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+)
+```
+`resources` gains `account_id INTEGER REFERENCES accounts(id)` — replaces the free-text `submitted_by` column. API routes JOIN `accounts` and return `username` as `submitted_by` in the response so the frontend shape is unchanged. Existing rows are migrated to the initial Admin's `account_id` at seed time.
+
+**Account management UI:** `AccountsModal` (Settings → Manage Accounts, admin only)
+- Lists all accounts (active and inactive) with role, status, and created date.
+- Inline role dropdown: change contributor ↔ admin; saves immediately on selection.
+- Inline reset-password form: expands per row on "Reset password" click; admin sets the new password directly.
+- Deactivate / Reactivate per row. Accounts are never deleted — deactivation preserves Resource history.
+- Guards enforced at the API: self-deactivation blocked; last active Admin cannot be deactivated or demoted.
+- New Account form: username, role, password (min 8 chars); expands in-place at the bottom of the list.
+
+**Account management CLI:** `scripts/manage-user.ts` (admin use, server access required)
+```bash
+npx tsx scripts/manage-user.ts --create --username wayne --role admin   # first run / bootstrap
+npx tsx scripts/manage-user.ts --create --username alice --role contributor
+npx tsx scripts/manage-user.ts --deactivate --username alice
+npx tsx scripts/manage-user.ts --reset-password --username alice
+```
+Use the CLI only for bootstrapping the first Admin or emergency recovery. All routine account management should go through the UI.
+
+**Route protection:**
+- `src/middleware.ts` — redirects unauthenticated requests to `/login`; redirects authenticated requests away from `/login` to `/`
+- `PUT /api/resources/[id]` and `DELETE /api/resources/[id]` — check `session.user.accountId === resource.accountId || session.user.role === 'admin'`; return 403 otherwise
+
+**UI changes:**
+- Nav: username displayed; key icon (`KeyRound`) opens `ChangePasswordModal` for all logged-in users; gear icon (Settings) hidden for Contributors; Sign out button always visible
+- Add Resource modal: `submitted_by` free-text input removed; server derives it from the session
+- ResourceCard: edit/delete actions hidden when the logged-in user is a Contributor who does not own the Resource
+
+### Password change
+
+Users can change their own password from the nav. Admins can reset any user's password via the Accounts UI or the CLI (`--reset-password`).
+
+**API:** `POST /api/account/password`
+- Requires valid session (401 if absent)
+- Body: `{ currentPassword: string, newPassword: string }`
+- Validates current password with `bcrypt.compare` before accepting the new one
+- On mismatch: `{ error: 'Current password is incorrect' }` with status 400
+- New password minimum length: 8 characters
+- Hashes new password at bcrypt cost 12, updates the `accounts` row
+- JWT sessions remain valid after a change (no forced re-login)
+
+**Component:** `ChangePasswordModal` — three fields (Current password, New password, Confirm new password); client-side match check before submit; inline error display; success toasts "Password changed" and closes.
+
+### "Added by" linked to auth user
+- `submitted_by` is now derived from the authenticated session via the `account_id` FK and JOIN — no free-text input.
+- Existing resources were migrated to the initial Admin account at auth introduction time.
+
+### Daily News tab
+
+See [`docs/adr/0002-news-ingest-via-webhook.md`](../docs/adr/0002-news-ingest-via-webhook.md) for the integration decision record.
+
+**Overview:** A second top-level tab alongside the resource library. Shows AI-generated HTML digests pushed by two n8n workflows. Two feeds selectable via a pill toggle: "General AI News" (daily) and "Learning Radar" (weekly). Articles within a digest can be Promoted to permanent Resources.
+
+**Database additions** (`src/lib/db.ts`):
+```sql
+news_items (
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  feed_type    TEXT NOT NULL CHECK(feed_type IN ('daily', 'weekly')),
+  digest_html  TEXT NOT NULL,
+  articles_json TEXT NOT NULL DEFAULT '[]',  -- JSON array of {title, url}
+  published_at TEXT NOT NULL DEFAULT (datetime('now'))
+)
+
+-- app_settings seed:
+INSERT OR IGNORE INTO app_settings (key, value) VALUES ('news_ingest_token', '');
+```
+Retention: on each ingest, delete rows where `feed_type = ?` and `id NOT IN (SELECT id FROM news_items WHERE feed_type = ? ORDER BY published_at DESC LIMIT N)`. Limits: 7 for `daily`, 4 for `weekly`.
+
+**Ingest endpoint** (`src/app/api/news/ingest/route.ts`):
+- `POST /api/news/ingest` — no session required; validated by `Authorization: Bearer <news_ingest_token>`
+- Body: `{ feed_type: 'daily' | 'weekly', digest_html: string, articles: { title: string, url: string }[] }`
+- Validates token against `app_settings.news_ingest_token`; returns 401 on mismatch
+- Inserts row, stores `articles` as `articles_json`, then prunes to retention limit
+- Returns `{ id }` on success
+
+**Read endpoint** (`src/app/api/news/route.ts`):
+- `GET /api/news?feed=daily|weekly` — requires valid session
+- Returns `{ items: { id, digest_html, articles: {title,url}[], published_at }[] }` newest-first
+
+**Settings modal** (Admin only):
+- New "News Ingest Token" row: shows masked token + "Regenerate" button
+- Regenerate generates a new `crypto.randomUUID()` token, saves to `app_settings`, shows it once unmasked
+- `GET /api/settings/news-token` — returns `{ has_token: boolean }` only (never raw value)
+- `POST /api/settings/news-token` — generates and saves new token, returns `{ token: string }` once
+
+**Frontend:**
+- `src/app/page.tsx` — add a tab bar ("Resources" | "News") above the toolbar; News tab renders `<NewsTab />`
+- `src/components/NewsTab.tsx`:
+  - Pill toggle: "General AI News" / "Learning Radar" (maps to `daily` / `weekly`)
+  - Fetches `GET /api/news?feed=<selected>` on mount and on toggle change
+  - Renders each digest in reverse-chronological order with a `<time>` date header
+  - Renders `digest_html` via `dangerouslySetInnerHTML` (content is from our own n8n, not user input)
+  - Below each digest: a collapsible "Save articles" list — one row per article in `articles_json` with a "Save to Resources" button
+  - Clicking "Save to Resources" opens `AddResourceModal` with the article URL pre-filled and `editing=null`; if AI is enabled, user can Auto-fill the rest
+
+**Promote flow:**
+- No new API route needed — Promote reuses the existing `POST /api/resources` flow via the Add Resource modal
+- The promoted Resource's `submitted_by` / `account_id` is derived from the logged-in session normally
+- After promotion the modal closes and the Resources tab refreshes (existing `onAdded` callback)
+
+**n8n workflow changes** (manual edits in n8n UI):
+- **Daily Digest**: re-enable the disabled `Code in JavaScript1` node (HTML stripper); wire its output into a new HTTP Request node that POSTs `{ feed_type: "daily", digest_html: "{{ $json.html }}", articles: [array of {title, url} from merged items] }` to `https://<host>/api/news/ingest` with header `Authorization: Bearer <token>`
+- **Learning News**: add an HTTP Request node at the end that POSTs `{ feed_type: "weekly", digest_html: "{{ $json.output[0].content[0].text }}", articles: [...] }` — same structure
+- Both workflows: the `articles` array comes from the items available in the Code node before the AI step (`items.map(i => ({ title: i.json.title, url: i.json.link }))`)

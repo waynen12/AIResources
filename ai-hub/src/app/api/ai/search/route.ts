@@ -1,8 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb, rowToResource } from '@/lib/db';
 import { getAIProvider } from '@/lib/ai';
+import { auth } from '@/lib/auth';
 
 export async function POST(request: NextRequest) {
+  const session = await auth();
+  if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   const body = await request.json();
   const { query } = body as { query?: string };
 

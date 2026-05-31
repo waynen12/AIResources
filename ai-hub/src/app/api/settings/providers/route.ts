@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
 import { encrypt } from '@/lib/encryption';
+import { auth } from '@/lib/auth';
 
 type ProviderRow = {
   provider_name: string;
@@ -9,6 +10,10 @@ type ProviderRow = {
 };
 
 export async function GET() {
+  const session = await auth();
+  if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  if (session.user.role !== 'admin') return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+
   const db = getDb();
   const rows = db.prepare('SELECT provider_name, encrypted_api_key, is_active FROM ai_providers').all() as ProviderRow[];
   return NextResponse.json(
@@ -21,6 +26,10 @@ export async function GET() {
 }
 
 export async function POST(request: NextRequest) {
+  const session = await auth();
+  if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  if (session.user.role !== 'admin') return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+
   const body = await request.json();
   const { provider_name, api_key } = body as { provider_name?: string; api_key?: string };
 
