@@ -462,7 +462,7 @@
       "name": "Create D-ID Talk",
       "disabled": true
     },
-    {
+    { 
       "parameters": {
         "conditions": {
           "options": {

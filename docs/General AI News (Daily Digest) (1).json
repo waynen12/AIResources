@@ -34,7 +34,7 @@
       "id": "d233d7ba-0b58-40c0-a9bc-f518351de82a",
       "name": "RSS Read"
     },
-    {
+    { 
       "parameters": {
         "url": "https://www.theverge.com/rss/ai-artificial-intelligence/index.xml",
         "options": {}

@@ -10,6 +10,11 @@ export default auth((req) => {
     return NextResponse.next();
   }
 
+  // Ingest webhook uses Bearer token auth — no session required.
+  if (nextUrl.pathname === '/api/news/ingest') {
+    return NextResponse.next();
+  }
+
   if (nextUrl.pathname === '/login') {
     if (isLoggedIn) {
       return NextResponse.redirect(new URL('/', nextUrl));

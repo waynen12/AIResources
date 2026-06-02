@@ -60,8 +60,12 @@ npm run lint     # ESLint
 - `src/components/DeleteConfirmModal.tsx` — delete confirmation dialog
 - `src/components/SessionProviderWrapper.tsx` — client `SessionProvider` wrapper used in layout
 - `src/components/AccountsModal.tsx` — admin-only modal for full account management: list all accounts, create, deactivate/reactivate, inline role change, inline password reset. Opened via "Manage Accounts" button in SettingsModal.
-- `src/components/SettingsModal.tsx` — gear icon modal: kill switch, provider selector, API key, test connection, export/import, Manage Accounts button (opens AccountsModal)
+- `src/components/SettingsModal.tsx` — gear icon modal: kill switch, provider selector, API key, test connection, export/import, Manage Accounts button, News Ingest Token (generate/regenerate, shown once)
 - `src/components/ThemeToggle.tsx` — light/dark toggle, persisted in localStorage
+- `src/components/NewsTab.tsx` — News tab: pill toggle (General AI News / Learning Radar), digest cards with amber date headers, collapsible article list, "Save to Resources" promote buttons
+- `src/app/api/news/ingest/route.ts` — `POST /api/news/ingest`: Bearer token auth, insert + auto-prune (7 daily / 4 weekly)
+- `src/app/api/news/route.ts` — `GET /api/news?feed=daily|weekly`: session-gated, newest-first
+- `src/app/api/settings/news-token/route.ts` — GET `{has_token}`, POST generate + save UUID token
 - `scripts/manage-user.ts` — CLI: `--create`, `--deactivate`, `--reset-password` (admin use only)
 
 ### Database schema
@@ -71,7 +75,9 @@ resources    (id, title, url, description, resource_type, tag1..tag5, submitted_
 audit_log    (id, resource_id, action, ip_address, timestamp)
 ai_providers (id, provider_name, encrypted_api_key, is_active, created_at, updated_at)
 app_settings (key TEXT PRIMARY KEY, value TEXT)
+news_items   (id, feed_type CHECK('daily'|'weekly'), digest_html, articles_json DEFAULT '[]', published_at)
 ```
+`app_settings` seeds: `ai_enabled` (default `false`), `news_ingest_token` (default `''`).
 Tags are stored as up to 5 separate nullable columns (tag1–tag5), normalised to lowercase. `rowToResource()` in `db.ts` combines them into a `tags: string[]` array for the API response.
 
 All create/update/delete operations log to `audit_log` with the client IP. No UI exists for the audit log. Import operations also log each inserted row to `audit_log` with action `'import'`.
@@ -194,12 +200,36 @@ The app runs as a Node.js process behind an IIS reverse proxy. After `npm run bu
 
 ## Roadmap — Personal Learning Hub (Digital Ocean)
 
-The app is being extended from an internal QA/team tool into a personal learning hub hosted on a Digital Ocean droplet. Requirements below are high-level and will be refined before implementation begins.
+The app is being extended from an internal QA/team tool into a personal learning hub hosted on a Digital Ocean droplet.
 
-### Deployment target change
-- Move from Windows Server / IIS to a Digital Ocean Linux droplet.
-- Deployment mechanism TBD (PM2 + Nginx reverse proxy is the likely path).
-- The same Next.js + SQLite stack is expected to carry over.
+### Deployment (Digital Ocean)
+
+See [`docs/adr/0003-pm2-over-docker-for-aihub.md`](../docs/adr/0003-pm2-over-docker-for-aihub.md) for the runtime decision record.
+See [`docs/deployment/droplet-setup.md`](../docs/deployment/droplet-setup.md) for the full one-time setup runbook.
+
+**Droplet:** 2 GB RAM / 50 GB / LON1 — Ubuntu 24.04 LTS. Shares the droplet with the existing n8n Docker Compose stack (Caddy + n8n + PostgreSQL).
+
+**Runtime:** Native Node.js via PM2 (not Docker). App lives at `/opt/aihub/ai-hub/` on the host, owned by the `deploy` user.
+
+**Reverse proxy / TLS:** Existing Caddy container handles TLS via Let's Encrypt. One block added to `/opt/n8n/Caddyfile`:
+```
+hub.notrauto.org {
+    reverse_proxy host-gateway:3000
+}
+```
+`host-gateway` is a Docker special hostname resolving to the host IP; requires `extra_hosts: ["host-gateway:host-gateway"]` on the Caddy service in `/opt/n8n/docker-compose.yml`.
+
+**DNS:** Cloudflare A record `hub → <droplet IP>`, DNS-only (grey cloud) — same as `n8n.notrauto.org`.
+
+**CI/CD:** GitHub Actions (`.github/workflows/deploy.yml`) — push to `main` triggers SSH deploy: `git pull → npm ci → npm run build → pm2 restart aihub`. GitHub repo secrets required: `DEPLOY_HOST`, `DEPLOY_USER`, `DEPLOY_SSH_KEY`.
+
+**Environment:** `.env.local` at `/opt/aihub/ai-hub/.env.local` — never committed. Required vars:
+- `AUTH_SECRET` — random 32-byte hex; signs Auth.js JWT tokens
+- `AUTH_URL` — `https://hub.notrauto.org`; tells Auth.js the canonical URL
+- `SETTINGS_ENCRYPTION_KEY` — 32-byte hex; AES-256-GCM key for stored AI provider API keys
+- `NEXT_PUBLIC_SITE_NAME` — optional, defaults to `"AI Hub"`
+
+**Swap:** 2 GB swap file configured at `/swapfile` — required to survive the Next.js build while n8n is running.
 
 ### Authentication
 
@@ -269,26 +299,15 @@ Users can change their own password from the nav. Admins can reset any user's pa
 - `submitted_by` is now derived from the authenticated session via the `account_id` FK and JOIN — no free-text input.
 - Existing resources were migrated to the initial Admin account at auth introduction time.
 
-### Daily News tab
+### Daily News tab ✓ implemented
 
 See [`docs/adr/0002-news-ingest-via-webhook.md`](../docs/adr/0002-news-ingest-via-webhook.md) for the integration decision record.
 
 **Overview:** A second top-level tab alongside the resource library. Shows AI-generated HTML digests pushed by two n8n workflows. Two feeds selectable via a pill toggle: "General AI News" (daily) and "Learning Radar" (weekly). Articles within a digest can be Promoted to permanent Resources.
 
-**Database additions** (`src/lib/db.ts`):
-```sql
-news_items (
-  id           INTEGER PRIMARY KEY AUTOINCREMENT,
-  feed_type    TEXT NOT NULL CHECK(feed_type IN ('daily', 'weekly')),
-  digest_html  TEXT NOT NULL,
-  articles_json TEXT NOT NULL DEFAULT '[]',  -- JSON array of {title, url}
-  published_at TEXT NOT NULL DEFAULT (datetime('now'))
-)
+**Database:** `news_items` table added in `src/lib/db.ts` (see schema above). `news_ingest_token` seeded in `app_settings`.
 
--- app_settings seed:
-INSERT OR IGNORE INTO app_settings (key, value) VALUES ('news_ingest_token', '');
-```
-Retention: on each ingest, delete rows where `feed_type = ?` and `id NOT IN (SELECT id FROM news_items WHERE feed_type = ? ORDER BY published_at DESC LIMIT N)`. Limits: 7 for `daily`, 4 for `weekly`.
+Retention: on each ingest, rows beyond the limit are pruned. Limits: 7 for `daily`, 4 for `weekly`.
 
 **Ingest endpoint** (`src/app/api/news/ingest/route.ts`):
 - `POST /api/news/ingest` — no session required; validated by `Authorization: Bearer <news_ingest_token>`
@@ -301,28 +320,19 @@ Retention: on each ingest, delete rows where `feed_type = ?` and `id NOT IN (SEL
 - `GET /api/news?feed=daily|weekly` — requires valid session
 - Returns `{ items: { id, digest_html, articles: {title,url}[], published_at }[] }` newest-first
 
-**Settings modal** (Admin only):
-- New "News Ingest Token" row: shows masked token + "Regenerate" button
-- Regenerate generates a new `crypto.randomUUID()` token, saves to `app_settings`, shows it once unmasked
+**Settings modal** (Admin only — implemented in `src/components/SettingsModal.tsx`):
+- "News Ingest Token" section: "Generate Token" / "Regenerate" button; token revealed once unmasked with a Copy button
 - `GET /api/settings/news-token` — returns `{ has_token: boolean }` only (never raw value)
 - `POST /api/settings/news-token` — generates and saves new token, returns `{ token: string }` once
 
-**Frontend:**
-- `src/app/page.tsx` — add a tab bar ("Resources" | "News") above the toolbar; News tab renders `<NewsTab />`
-- `src/components/NewsTab.tsx`:
-  - Pill toggle: "General AI News" / "Learning Radar" (maps to `daily` / `weekly`)
-  - Fetches `GET /api/news?feed=<selected>` on mount and on toggle change
-  - Renders each digest in reverse-chronological order with a `<time>` date header
-  - Renders `digest_html` via `dangerouslySetInnerHTML` (content is from our own n8n, not user input)
-  - Below each digest: a collapsible "Save articles" list — one row per article in `articles_json` with a "Save to Resources" button
-  - Clicking "Save to Resources" opens `AddResourceModal` with the article URL pre-filled and `editing=null`; if AI is enabled, user can Auto-fill the rest
+**Frontend (implemented):**
+- `src/app/page.tsx` — tab bar ("Resources" | "News") above the toolbar; News tab renders `<NewsTab />`
+- `src/components/NewsTab.tsx`: pill toggle, digest cards with amber date headers, collapsible article list with per-article "Save to Resources" promote buttons
+- `src/components/AddResourceModal.tsx` — `initialUrl` prop added; pre-fills URL when opened from the promote flow
 
-**Promote flow:**
-- No new API route needed — Promote reuses the existing `POST /api/resources` flow via the Add Resource modal
-- The promoted Resource's `submitted_by` / `account_id` is derived from the logged-in session normally
-- After promotion the modal closes and the Resources tab refreshes (existing `onAdded` callback)
+**Promote flow:** No new API route — reuses `POST /api/resources` via `AddResourceModal`. `submitted_by` / `account_id` from session. After promotion, `onResourceAdded` callback propagates to the Resources tab.
 
-**n8n workflow changes** (manual edits in n8n UI):
+**n8n workflow changes — manual steps still required:**
 - **Daily Digest**: re-enable the disabled `Code in JavaScript1` node (HTML stripper); wire its output into a new HTTP Request node that POSTs `{ feed_type: "daily", digest_html: "{{ $json.html }}", articles: [array of {title, url} from merged items] }` to `https://<host>/api/news/ingest` with header `Authorization: Bearer <token>`
 - **Learning News**: add an HTTP Request node at the end that POSTs `{ feed_type: "weekly", digest_html: "{{ $json.output[0].content[0].text }}", articles: [...] }` — same structure
-- Both workflows: the `articles` array comes from the items available in the Code node before the AI step (`items.map(i => ({ title: i.json.title, url: i.json.link }))`)
+- Both workflows: the `articles` array comes from the items before the AI step (`items.map(i => ({ title: i.json.title, url: i.json.link }))`)

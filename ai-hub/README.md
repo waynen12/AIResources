@@ -266,3 +266,146 @@ The SQLite database in `data\aihub.db` is preserved across upgrades.
 
 **Port conflict**
 - To run on a port other than 3000, change the NSSM Arguments to: `node_modules\.bin\next start -p 8080` and update the IIS rewrite rule URL to match
+
+---
+
+## n8n Workflow Integration (Daily News tab)
+
+The News tab is fed by two existing n8n workflows. The steps below add a single HTTP Request node to each workflow that POSTs the AI-generated digest to AI Hub. **The Telegram and email paths in both workflows are left completely untouched.**
+
+---
+
+### Step 1 — Generate the Ingest Token
+
+1. Sign in to AI Hub with an Admin account
+2. Open **Settings** (gear icon, top-right)
+3. Scroll to **News Ingest Token** and click **Generate Token**
+4. Copy the token immediately — it is only shown once
+5. Store it somewhere safe; you will paste it into both workflows below
+
+---
+
+### Step 2 — Daily Digest workflow
+
+Open the **General AI News (Daily Digest)** workflow in n8n.
+
+#### 2a — Re-enable "Code in JavaScript1"
+
+This node already exists in the canvas but is currently disabled. It strips markdown code fences from the model output to produce clean HTML.
+
+1. Right-click the **Code in JavaScript1** node
+2. Click **Enable**
+
+#### 2b — Connect "Message a model" to "Code in JavaScript1"
+
+The existing connection from **Message a model** → **Code in JavaScript2** (the Telegram path) stays as-is. You are adding a second output connection, not replacing it.
+
+1. Hover over the **Message a model** node until the output connector appears on its right edge
+2. Drag from that connector to the input of **Code in JavaScript1**
+
+The path now looks like:
+
+```
+Message a model ──► Code in JavaScript2 ──► Send a text message  (Telegram — unchanged)
+                └──► Code in JavaScript1 ──► [new HTTP Request node]
+```
+
+#### 2c — Add an HTTP Request node
+
+1. Click **+** to add a new node after **Code in JavaScript1**, or drag one from the node panel
+2. Select **HTTP Request**
+3. Configure it as follows:
+
+| Setting | Value |
+|---|---|
+| Method | `POST` |
+| URL | `https://<your-ai-hub-host>/api/news/ingest` |
+
+4. Open **Headers**, click **Add header**:
+
+| Name | Value |
+|---|---|
+| `Authorization` | `Bearer <paste your token from Step 1>` |
+
+5. Set **Body** → **JSON**, and enter the following in the **JSON body** field:
+
+```json
+{
+  "feed_type": "daily",
+  "digest_html": "={{ $json.html }}",
+  "articles": "={{ $('Merge').all().map(i => ({ title: i.json.title, url: i.json.link })) }}"
+}
+```
+
+> The `articles` expression reaches back to the **Merge** node — where all 7 RSS feeds are combined — to pull the raw `title` and `link` fields before they were reformatted into a text summary.
+
+6. Connect **Code in JavaScript1** → new HTTP Request node
+
+---
+
+### Step 3 — Learning News (Weekly) workflow
+
+Open the **Learning News (Weekly)** workflow in n8n.
+
+The **Strip Code Fences** node is already active in this workflow and already produces `{ html }`. You are adding a second output connection from it — the existing **Strip Code Fences** → **Send an email** connection stays untouched.
+
+#### 3a — Add an HTTP Request node
+
+1. Add a new **HTTP Request** node to the canvas
+2. Configure it identically to Step 2c above, with one change — use `"weekly"` for `feed_type`:
+
+| Setting | Value |
+|---|---|
+| Method | `POST` |
+| URL | `https://<your-ai-hub-host>/api/news/ingest` |
+
+Headers:
+
+| Name | Value |
+|---|---|
+| `Authorization` | `Bearer <paste your token from Step 1>` |
+
+JSON body:
+
+```json
+{
+  "feed_type": "weekly",
+  "digest_html": "={{ $json.html }}",
+  "articles": "={{ $('Merge').all().map(i => ({ title: i.json.title, url: i.json.link })) }}"
+}
+```
+
+#### 3b — Connect Strip Code Fences to the new node
+
+1. Hover over **Strip Code Fences** until the output connector appears
+2. Drag from that connector to the input of the new HTTP Request node
+
+The path now looks like:
+
+```
+Strip Code Fences ──► Send an email  (email — unchanged)
+                  └──► [new HTTP Request node]
+
+Message a model ──► Prepare for telegram ──► Send a text message  (Telegram — unchanged)
+```
+
+---
+
+### Step 4 — Verify
+
+1. Manually execute one of the workflows using the **Test workflow** button in n8n
+2. Check the HTTP Request node's output panel — you should see a `200 OK` response with `{ "id": <number> }`
+3. Open AI Hub → **News** tab → select the matching feed — the digest should appear
+
+If you see a `401` response, the token in the Authorization header does not match what is stored in AI Hub. Regenerate the token in Settings and update both workflow nodes.
+
+---
+
+### Token rotation
+
+If you ever need to rotate the token:
+
+1. Go to AI Hub → Settings → **News Ingest Token** → **Regenerate**
+2. Copy the new token
+3. Update the **Authorization** header in the HTTP Request node in **both** workflows
+4. Save and re-activate each workflow
