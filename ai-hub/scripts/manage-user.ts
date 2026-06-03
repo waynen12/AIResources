@@ -90,11 +90,18 @@ async function main() {
     ).run(opts.username, hash, opts.role);
 
     // Migrate any unowned resources to this account if it's the first admin.
+    // Guard against a fresh install where the resources table doesn't exist yet
+    // (it gets created on first app request via src/lib/db.ts).
     if (opts.role === 'admin') {
       const adminCount = (db.prepare(`SELECT COUNT(*) as c FROM accounts WHERE role = 'admin'`).get() as { c: number }).c;
       if (adminCount === 1) {
-        db.prepare(`UPDATE resources SET account_id = ? WHERE account_id IS NULL`).run(result.lastInsertRowid);
-        console.log(`Migrated existing resources to account "${opts.username}"`);
+        const resourcesExists = db.prepare(
+          `SELECT name FROM sqlite_master WHERE type='table' AND name='resources'`
+        ).get();
+        if (resourcesExists) {
+          db.prepare(`UPDATE resources SET account_id = ? WHERE account_id IS NULL`).run(result.lastInsertRowid);
+          console.log(`Migrated existing resources to account "${opts.username}"`);
+        }
       }
     }
 
