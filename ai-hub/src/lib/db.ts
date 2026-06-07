@@ -77,6 +77,23 @@ export function getDb(): Database.Database {
     );
 
     INSERT OR IGNORE INTO app_settings (key, value) VALUES ('news_ingest_token', '');
+
+    CREATE TABLE IF NOT EXISTS personal_items (
+      id            INTEGER PRIMARY KEY AUTOINCREMENT,
+      account_id    INTEGER NOT NULL REFERENCES accounts(id),
+      title         TEXT NOT NULL,
+      url           TEXT NOT NULL,
+      description   TEXT NOT NULL,
+      resource_type TEXT NOT NULL,
+      tag1          TEXT,
+      tag2          TEXT,
+      tag3          TEXT,
+      tag4          TEXT,
+      tag5          TEXT,
+      status        TEXT NOT NULL DEFAULT 'not_started'
+                      CHECK(status IN ('not_started', 'in_progress', 'done')),
+      date_added    TEXT NOT NULL DEFAULT (datetime('now'))
+    );
   `);
 
   // If resources table predates auth (account_id column missing), add it.
@@ -134,6 +151,48 @@ export function rowToResource(row: RawResource): Resource {
     tags: [row.tag1, row.tag2, row.tag3, row.tag4, row.tag5].filter(Boolean) as string[],
     submitted_by: row.username ?? row.submitted_by,
     account_id: row.account_id,
+    date_added: row.date_added,
+  };
+}
+
+export type PersonalItem = {
+  id: number;
+  account_id: number;
+  title: string;
+  url: string;
+  description: string;
+  resource_type: string;
+  tags: string[];
+  status: 'not_started' | 'in_progress' | 'done';
+  date_added: string;
+};
+
+type RawPersonalItem = {
+  id: number;
+  account_id: number;
+  title: string;
+  url: string;
+  description: string;
+  resource_type: string;
+  tag1: string | null;
+  tag2: string | null;
+  tag3: string | null;
+  tag4: string | null;
+  tag5: string | null;
+  status: 'not_started' | 'in_progress' | 'done';
+  date_added: string;
+};
+
+export function rowToPersonalItem(row: RawPersonalItem): PersonalItem {
+  return {
+    id: row.id,
+    account_id: row.account_id,
+    title: row.title,
+    url: row.url,
+    description: row.description,
+    resource_type: row.resource_type,
+    tags: [row.tag1, row.tag2, row.tag3, row.tag4, row.tag5].filter(Boolean) as string[],
+    status: row.status,
     date_added: row.date_added,
   };
 }

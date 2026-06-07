@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { ChevronDown, ChevronUp, Loader2 } from 'lucide-react';
+import { toast } from 'sonner';
 import AddResourceModal from '@/components/AddResourceModal';
 import type { Resource } from '@/lib/db';
 
@@ -34,6 +35,7 @@ export default function NewsTab({ aiEnabled, aiHasProvider, existingTags, onReso
   const [expandedArticles, setExpandedArticles] = useState<Set<number>>(new Set());
   const [addModalOpen, setAddModalOpen] = useState(false);
   const [promoteUrl, setPromoteUrl] = useState('');
+  const [savingToLearning, setSavingToLearning] = useState<string | null>(null);
 
   useEffect(() => {
     setLoading(true);
@@ -56,6 +58,34 @@ export default function NewsTab({ aiEnabled, aiHasProvider, existingTags, onReso
   function handlePromote(url: string) {
     setPromoteUrl(url);
     setAddModalOpen(true);
+  }
+
+  async function handleSaveToLearning(article: Article) {
+    if (savingToLearning === article.url) return;
+    setSavingToLearning(article.url);
+    try {
+      const res = await fetch('/api/personal-items', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: article.title,
+          url: article.url,
+          description: article.title,
+          resource_type: 'Article',
+          tags: [],
+        }),
+      });
+      if (res.status === 409) {
+        toast.info('Already in My Learning');
+        return;
+      }
+      if (!res.ok) throw new Error();
+      toast.success('Saved to My Learning');
+    } catch {
+      toast.error('Failed to save to My Learning');
+    } finally {
+      setSavingToLearning(null);
+    }
   }
 
   return (
@@ -137,6 +167,13 @@ export default function NewsTab({ aiEnabled, aiHasProvider, existingTags, onReso
                           className="shrink-0 text-xs font-medium px-2.5 py-1 rounded-md border border-amber-400 text-amber-700 dark:text-amber-400 dark:border-amber-600 hover:bg-amber-50 dark:hover:bg-amber-950/30 transition-colors"
                         >
                           Save to Resources
+                        </button>
+                        <button
+                          onClick={() => handleSaveToLearning(article)}
+                          disabled={savingToLearning === article.url}
+                          className="shrink-0 text-xs font-medium px-2.5 py-1 rounded-md border border-amber-400 text-amber-700 dark:text-amber-400 dark:border-amber-600 hover:bg-amber-50 dark:hover:bg-amber-950/30 transition-colors disabled:opacity-50"
+                        >
+                          Save to My Learning
                         </button>
                       </div>
                     ))}

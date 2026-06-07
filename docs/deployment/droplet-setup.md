@@ -249,6 +249,56 @@ Caddy will automatically provision a Let's Encrypt certificate for `hub.notrauto
 
 ---
 
+## Deployment status (as of 2026-06-04)
+
+| Step | Status | Notes |
+|---|---|---|
+| Steps 1–14 | ✅ Complete | App live at `https://hub.notrauto.org` |
+| Login | ✅ Working | Admin account created, auth functioning |
+| CSV import | ✅ Working | Import via Settings modal confirmed |
+| TLS / Caddy | ✅ Working | Let's Encrypt cert provisioned |
+| GitHub Actions CI/CD | ⏸ Deferred | SSH key generated (step 6), workflow not yet committed |
+| News ingest (n8n → app) | ❌ Failing | See [News ingest troubleshooting](#news-ingest-troubleshooting) below |
+
+---
+
+## News ingest troubleshooting
+
+### Symptom
+
+n8n HTTP Request node returns **405 Method Not Allowed** when calling `https://hub.notrauto.org/api/news/ingest`.
+
+### Root cause
+
+The n8n node is configured with **method: GET**. The `/api/news/ingest` route only accepts **POST**. Next.js returns 405 for any other method on that route.
+
+### Fix
+
+In the n8n workflow, open the HTTP Request node that calls `/api/news/ingest` and:
+
+1. Set **Method** to `POST`
+2. Set **Body Content Type** to `JSON`
+3. Set the body to:
+   ```json
+   {
+     "feed_type": "daily",
+     "digest_html": "{{ $json.html }}",
+     "articles": []
+   }
+   ```
+   (adjust field references to match your workflow's output shape — see `CLAUDE.md` → "n8n workflow changes" for the exact payload spec)
+4. Add header: `Authorization: Bearer <token>` — token is generated in the app under Settings → News Ingest Token
+
+### Expected response on success
+
+```json
+{ "id": 123 }
+```
+
+HTTP 200. If you get 401 the Bearer token is wrong or missing. If you get 400, the body shape is incorrect.
+
+---
+
 ## Subsequent deployments
 
 All deployments happen automatically on push to `main` via GitHub Actions. To deploy manually:

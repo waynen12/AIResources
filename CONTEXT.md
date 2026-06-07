@@ -89,14 +89,32 @@ _Avoid_: API key (reserved for AI provider keys), webhook secret
 The action of converting an article link from a News Item into a permanent Resource in the Catalog. Triggered by the logged-in user via a "Save to Resources" button in the News tab. Promotion opens the Add Resource modal with the article URL pre-filled; Auto-fill handles the rest. The resulting Resource is owned by the Contributor who promoted it.
 _Avoid_: Save, import, pin, bookmark
 
+### Personal Learning
+
+**Personal Item**:
+A URL saved privately by a single Account for their own learning tracking. Shares the same fields as a Resource (title, URL, description, type, tags) but is visible only to the Account that created it — including Admins. Not part of the Catalog. Carries a Status. Displayed in the "My Learning" tab.
+_Avoid_: Personal Resource, bookmark, note, private resource
+
+**Status**:
+A field on a Personal Item indicating the Account's progress: `not_started` ("To Read/Watch"), `in_progress` ("In Progress"), or `done` ("Done"). Default on creation: `not_started`. Changed via a dropdown badge on the Personal Item card.
+_Avoid_: State, progress, completion
+
+**My Learning**:
+The tab in the main UI that displays a logged-in Account's Personal Items. Visually identical to the Resources tab. Supports keyword search and Smart Search (scoped to the Account's own items only). Ordered status-first (`not_started` → `in_progress` → `done`), then newest within each group. Personal Items do not appear in the Catalog, export, or Catalog Smart Search.
+_Avoid_: Personal tab, private tab, my resources
+
+**Save to My Learning**:
+The action of copying a Resource or News article into the logged-in Account's Personal Items as an independent copy. Triggered by a bookmark icon on ResourceCards or a "Save to My Learning" button on News article rows. Executes immediately with a toast — no modal. If the URL already exists in the Account's Personal Items, the save is silently skipped and a "Already in My Learning" toast is shown.
+_Avoid_: Bookmark, pin, add to personal
+
 ### Discovery
 
 **Catalog**:
-The full collection of Resources in the hub. Smart Search operates across the entire Catalog.
+The full collection of Resources in the hub. Smart Search operates across the entire Catalog. Personal Items are not part of the Catalog.
 _Avoid_: Library, database, list, feed
 
 **Tag**:
-A lowercase label attached to a Resource to aid discovery. A Resource may have zero to five Tags.
+A lowercase label attached to a Resource or Personal Item to aid discovery. A Resource or Personal Item may have zero to five Tags.
 _Avoid_: Category, label, keyword
 
 ## Example dialogue

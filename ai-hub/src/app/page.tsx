@@ -12,6 +12,7 @@ import ThemeToggle from '@/components/ThemeToggle';
 import SettingsModal from '@/components/SettingsModal';
 import ChangePasswordModal from '@/components/ChangePasswordModal';
 import NewsTab from '@/components/NewsTab';
+import PersonalTab from '@/components/PersonalTab';
 import type { Resource } from '@/lib/db';
 
 const SITE_NAME = process.env.NEXT_PUBLIC_SITE_NAME ?? 'AI Hub';
@@ -38,7 +39,7 @@ export default function Home() {
   const [editingResource, setEditingResource] = useState<Resource | null>(null);
   const [deletingResource, setDeletingResource] = useState<Resource | null>(null);
   const [existingTags, setExistingTags] = useState<string[]>([]);
-  const [activeTab, setActiveTab] = useState<'resources' | 'news'>('resources');
+  const [activeTab, setActiveTab] = useState<'resources' | 'news' | 'personal'>('resources');
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [changePasswordOpen, setChangePasswordOpen] = useState(false);
   const [aiEnabled, setAiEnabled] = useState(false);
@@ -253,7 +254,7 @@ export default function Home() {
       {/* Tab bar */}
       <div className="border-b bg-background">
         <div className="max-w-6xl mx-auto px-6 flex">
-          {(['resources', 'news'] as const).map(tab => (
+          {(['resources', 'news', 'personal'] as const).map(tab => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
@@ -263,7 +264,7 @@ export default function Home() {
                   : 'border-transparent text-muted-foreground hover:text-foreground'
               }`}
             >
-              {tab === 'resources' ? 'Resources' : 'News'}
+              {tab === 'resources' ? 'Resources' : tab === 'news' ? 'News' : 'My Learning'}
             </button>
           ))}
         </div>
@@ -275,6 +276,14 @@ export default function Home() {
           aiHasProvider={aiHasProvider}
           existingTags={existingTags}
           onResourceAdded={handleResourceAdded}
+        />
+      )}
+
+      {activeTab === 'personal' && (
+        <PersonalTab
+          aiEnabled={aiEnabled}
+          aiHasProvider={aiHasProvider}
+          existingTags={existingTags}
         />
       )}
 

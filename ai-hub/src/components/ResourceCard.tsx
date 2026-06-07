@@ -1,7 +1,8 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { ChevronDown, ExternalLink, Pencil, Trash2 } from 'lucide-react';
+import { Bookmark, ChevronDown, ExternalLink, Pencil, Trash2 } from 'lucide-react';
+import { toast } from 'sonner';
 import type { Resource } from '@/lib/db';
 
 const TYPE_COLOURS: Record<string, string> = {
@@ -40,6 +41,35 @@ export default function ResourceCard({ resource, onTagClick, onEdit, onDelete, s
   const descRef = useRef<HTMLParagraphElement>(null);
   const [isTruncated, setIsTruncated] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
+  const [bookmarking, setBookmarking] = useState(false);
+
+  async function handleBookmark() {
+    if (bookmarking) return;
+    setBookmarking(true);
+    try {
+      const res = await fetch('/api/personal-items', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: resource.title,
+          url: resource.url,
+          description: resource.description,
+          resource_type: resource.resource_type,
+          tags: resource.tags,
+        }),
+      });
+      if (res.status === 409) {
+        toast.info('Already in My Learning');
+        return;
+      }
+      if (!res.ok) throw new Error();
+      toast.success('Saved to My Learning');
+    } catch {
+      toast.error('Failed to save to My Learning');
+    } finally {
+      setBookmarking(false);
+    }
+  }
 
   useEffect(() => {
     const el = descRef.current;
@@ -58,6 +88,15 @@ export default function ResourceCard({ resource, onTagClick, onEdit, onDelete, s
           {resource.resource_type}
         </span>
         <div className="flex items-center gap-1">
+          <button
+            onClick={handleBookmark}
+            disabled={bookmarking}
+            className="text-muted-foreground hover:text-amber-500 transition-colors p-0.5 rounded disabled:opacity-50"
+            aria-label="Save to My Learning"
+            title="Save to My Learning"
+          >
+            <Bookmark className="h-3.5 w-3.5" />
+          </button>
           {canMutate && (
             <button
               onClick={() => onEdit(resource)}

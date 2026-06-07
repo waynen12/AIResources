@@ -23,9 +23,10 @@ type Props = {
   initialUrl?: string;
   aiEnabled?: boolean;
   aiHasProvider?: boolean;
+  destination?: 'resources' | 'personal';
 };
 
-export default function AddResourceModal({ open, onClose, onAdded, onUpdated, existingTags, editing, initialUrl, aiEnabled = false, aiHasProvider = false }: Props) {
+export default function AddResourceModal({ open, onClose, onAdded, onUpdated, existingTags, editing, initialUrl, aiEnabled = false, aiHasProvider = false, destination = 'resources' }: Props) {
   const [title, setTitle] = useState('');
   const [url, setUrl] = useState('');
   const [description, setDescription] = useState('');
@@ -112,13 +113,16 @@ export default function AddResourceModal({ open, onClose, onAdded, onUpdated, ex
     }
   }
 
-  async function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setError('');
     setSubmitting(true);
     try {
       const isEdit = !!editing;
-      const res = await fetch(isEdit ? `/api/resources/${editing.id}` : '/api/resources', {
+      const endpoint = isEdit
+        ? `/api/resources/${editing.id}`
+        : destination === 'personal' ? '/api/personal-items' : '/api/resources';
+      const res = await fetch(endpoint, {
         method: isEdit ? 'PUT' : 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ title, url, description, resource_type: resourceType, tags }),
@@ -149,7 +153,11 @@ export default function AddResourceModal({ open, onClose, onAdded, onUpdated, ex
     >
       <DialogContent className="sm:max-w-130">
         <DialogHeader>
-          <DialogTitle>{editing ? 'Edit Resource' : 'Add a Resource'}</DialogTitle>
+          <DialogTitle>
+            {editing
+              ? destination === 'personal' ? 'Edit Personal Item' : 'Edit Resource'
+              : destination === 'personal' ? 'Add a Personal Item' : 'Add a Resource'}
+          </DialogTitle>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4 mt-2">
           <div className="space-y-1.5">
@@ -247,7 +255,7 @@ export default function AddResourceModal({ open, onClose, onAdded, onUpdated, ex
           <div className="flex justify-end gap-2 pt-2">
             <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
             <Button type="submit" disabled={submitting || !resourceType}>
-              {submitting ? 'Saving...' : editing ? 'Save Changes' : 'Add Resource'}
+              {submitting ? 'Saving...' : editing ? 'Save Changes' : destination === 'personal' ? 'Add to My Learning' : 'Add Resource'}
             </Button>
           </div>
         </form>
