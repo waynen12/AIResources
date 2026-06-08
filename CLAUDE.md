@@ -29,7 +29,7 @@ npm run lint     # ESLint
 - **openai** — OpenAI API client
 
 ### Key files
-- `src/lib/db.ts` — database initialisation, table creation, `rowToResource()` helper
+- `src/lib/db.ts` — database initialisation, table creation, `rowToResource()` and `rowToPersonalItem()` helpers, `Resource` and `PersonalItem` types
 - `src/lib/auth.ts` — Auth.js v5 config: Credentials provider, bcrypt verify, JWT callbacks (`accountId`, `username`, `role`), rolling 7-day sessions
 - `src/lib/encryption.ts` — AES-256-GCM encrypt/decrypt for API keys stored in DB
 - `src/lib/ai/provider.ts` — `AIProvider` interface: `fetchUrlMetadata`, `suggestTags`, `smartSearch`
@@ -52,17 +52,22 @@ npm run lint     # ESLint
 - `src/app/api/settings/providers/test/route.ts` — POST test connection for Anthropic or OpenAI; on success with a new key, persists it
 - `src/app/api/ai/autofill/route.ts` — POST `{ url }` → extracted metadata via `fetchUrlMetadata`
 - `src/app/api/ai/search/route.ts` — POST `{ query }` → AI-ranked `Resource[]` via `smartSearch`
+- `src/app/api/ai/personal-search/route.ts` — POST `{ query }` → AI-ranked `PersonalItem[]` scoped to session user via `smartSearch`
+- `src/app/api/personal-items/route.ts` — GET (paginated + keyword search, status counts) and POST (with 409 on duplicate URL per account) handlers. All queries scoped to `session.user.accountId` — no Admin bypass.
+- `src/app/api/personal-items/[id]/route.ts` — PUT (full edit or status-only patch) and DELETE. Ownership verified against `session.user.accountId`; returns 403 on mismatch.
 - `src/app/login/page.tsx` — amber/gradient login form with Suspense boundary for `useSearchParams`
-- `src/app/page.tsx` — main page: hero, search bar (keyword + smart mode), infinite scroll card grid
-- `src/components/ResourceCard.tsx` — individual resource card with edit/delete/open actions
-- `src/components/AddResourceModal.tsx` — add/edit modal; includes Auto-fill button when AI is active
+- `src/app/page.tsx` — main page: hero, search bar (keyword + smart mode), three-tab bar (Resources / News / My Learning), infinite scroll card grid
+- `src/components/ResourceCard.tsx` — individual resource card with bookmark (Save to My Learning), edit/delete/open actions
+- `src/components/AddResourceModal.tsx` — add/edit modal; `destination` prop routes POST to `/api/personal-items` when `'personal'`; includes Auto-fill button when AI is active
+- `src/components/PersonalItemCard.tsx` — Personal Item card: status badge (grey/amber/green) with click-to-dropdown that fires PUT status patch immediately; edit/delete/open actions
+- `src/components/PersonalTab.tsx` — My Learning tab: keyword search bar, AI smart search (sparkle button), toolbar with status breakdown (`X items — Y to read · Z in progress · W done`), infinite scroll grid of `PersonalItemCard` components, inline delete confirmation, "Add Personal Item" button
 - `src/components/ChangePasswordModal.tsx` — password change dialog; opened via key icon in the nav
 - `src/components/DeleteConfirmModal.tsx` — delete confirmation dialog
 - `src/components/SessionProviderWrapper.tsx` — client `SessionProvider` wrapper used in layout
 - `src/components/AccountsModal.tsx` — admin-only modal for full account management: list all accounts, create, deactivate/reactivate, inline role change, inline password reset. Opened via "Manage Accounts" button in SettingsModal.
 - `src/components/SettingsModal.tsx` — gear icon modal: kill switch, provider selector, API key, test connection, export/import, Manage Accounts button, News Ingest Token (generate/regenerate, shown once)
 - `src/components/ThemeToggle.tsx` — light/dark toggle, persisted in localStorage
-- `src/components/NewsTab.tsx` — News tab: pill toggle (General AI News / Learning Radar), digest cards with amber date headers, collapsible article list, "Save to Resources" promote buttons
+- `src/components/NewsTab.tsx` — News tab: pill toggle (General AI News / Learning Radar), digest cards with amber date headers, collapsible article list, "Save to Resources" promote buttons, "Save to My Learning" buttons (direct POST, no modal)
 - `src/app/api/news/ingest/route.ts` — `POST /api/news/ingest`: Bearer token auth, insert + auto-prune (7 daily / 4 weekly)
 - `src/app/api/news/route.ts` — `GET /api/news?feed=daily|weekly`: session-gated, newest-first
 - `src/app/api/settings/news-token/route.ts` — GET `{has_token}`, POST generate + save UUID token
@@ -70,15 +75,18 @@ npm run lint     # ESLint
 
 ### Database schema
 ```sql
-accounts     (id, username, password_hash, role, is_active, created_at)
-resources    (id, title, url, description, resource_type, tag1..tag5, submitted_by, account_id, date_added)
-audit_log    (id, resource_id, action, ip_address, timestamp)
-ai_providers (id, provider_name, encrypted_api_key, is_active, created_at, updated_at)
-app_settings (key TEXT PRIMARY KEY, value TEXT)
-news_items   (id, feed_type CHECK('daily'|'weekly'), digest_html, articles_json DEFAULT '[]', published_at)
+accounts       (id, username, password_hash, role, is_active, created_at)
+resources      (id, title, url, description, resource_type, tag1..tag5, submitted_by, account_id, date_added)
+audit_log      (id, resource_id, action, ip_address, timestamp)
+ai_providers   (id, provider_name, encrypted_api_key, is_active, created_at, updated_at)
+app_settings   (key TEXT PRIMARY KEY, value TEXT)
+news_items     (id, feed_type CHECK('daily'|'weekly'), digest_html, articles_json DEFAULT '[]', published_at)
+personal_items (id, account_id REFERENCES accounts(id), title, url, description, resource_type,
+                tag1..tag5, status CHECK('not_started'|'in_progress'|'done') DEFAULT 'not_started', date_added)
 ```
 `app_settings` seeds: `ai_enabled` (default `false`), `news_ingest_token` (default `''`).
-Tags are stored as up to 5 separate nullable columns (tag1–tag5), normalised to lowercase. `rowToResource()` in `db.ts` combines them into a `tags: string[]` array for the API response.
+Tags are stored as up to 5 separate nullable columns (tag1–tag5), normalised to lowercase. `rowToResource()` and `rowToPersonalItem()` in `db.ts` combine them into a `tags: string[]` array for the API response.
+`personal_items` are strictly private — all queries include `WHERE account_id = ?` with no Admin bypass. No FK back to `resources`: copies are independent.
 
 All create/update/delete operations log to `audit_log` with the client IP. No UI exists for the audit log. Import operations also log each inserted row to `audit_log` with action `'import'`.
 
@@ -326,8 +334,8 @@ Retention: on each ingest, rows beyond the limit are pruned. Limits: 7 for `dail
 - `POST /api/settings/news-token` — generates and saves new token, returns `{ token: string }` once
 
 **Frontend (implemented):**
-- `src/app/page.tsx` — tab bar ("Resources" | "News") above the toolbar; News tab renders `<NewsTab />`
-- `src/components/NewsTab.tsx`: pill toggle, digest cards with amber date headers, collapsible article list with per-article "Save to Resources" promote buttons
+- `src/app/page.tsx` — tab bar ("Resources" | "News" | "My Learning") above the toolbar; News tab renders `<NewsTab />`
+- `src/components/NewsTab.tsx`: pill toggle, digest cards with amber date headers, collapsible article list with per-article "Save to Resources" and "Save to My Learning" buttons
 - `src/components/AddResourceModal.tsx` — `initialUrl` prop added; pre-fills URL when opened from the promote flow
 
 **Promote flow:** No new API route — reuses `POST /api/resources` via `AddResourceModal`. `submitted_by` / `account_id` from session. After promotion, `onResourceAdded` callback propagates to the Resources tab.
@@ -359,3 +367,34 @@ Both workflows share the same node pattern after the GPT step:
 **Email (SendGrid) is intentionally disabled** in both workflows — cost was prohibitive for 2 emails/day. The SendGrid nodes remain in the workflow but are disconnected.
 
 **Ingest token:** Generated in Settings → News Ingest Token (admin only). The token in the workflow JSONs above is specific to the `hub.notrauto.org` deployment and should be rotated if the DB is reset.
+
+### My Learning tab ✓ implemented
+
+See [`docs/adr/0004-personal-items-separate-table.md`](../docs/adr/0004-personal-items-separate-table.md) for the data model decision record.
+
+**Overview:** A third top-level tab alongside Resources and News. Displays Personal Items — private, per-Account learning entries that are never visible to other users, including Admins. Supports keyword search, AI Smart Search (scoped), status tracking, infinite scroll, and direct add/edit/delete.
+
+**Database:** `personal_items` table added in `src/lib/db.ts` (see schema above). Independent copy — no FK back to `resources`.
+
+**Privacy invariant:** Every query against `personal_items` includes `WHERE account_id = ?` bound to `session.user.accountId`. There is no Admin bypass — Admins cannot see other users' Personal Items.
+
+**API routes:**
+
+- `GET /api/personal-items?search=&page=` — returns `{ items, total, page, hasMore, counts: { not_started, in_progress, done } }`. Ordered status-first (`not_started → in_progress → done`), then `date_added DESC` within each group.
+- `POST /api/personal-items` — body: `{ title, url, description, resource_type, tags[] }`. Returns 409 if a Personal Item with the same URL already exists for this Account.
+- `PUT /api/personal-items/[id]` — accepts either a full edit payload or `{ status }` alone for status-only patches. Verifies `account_id` ownership; returns 403 on mismatch.
+- `DELETE /api/personal-items/[id]` — verifies ownership; returns 204 on success.
+- `POST /api/ai/personal-search` — body: `{ query }` — reuses `provider.smartSearch()` against the session user's Personal Items only. Returns `{ items: PersonalItem[] }`.
+
+**Frontend:**
+- `src/app/page.tsx` — extended `activeTab` to `'resources' | 'news' | 'personal'`; "My Learning" tab renders `<PersonalTab />`
+- `src/components/PersonalTab.tsx` — keyword search bar + AI smart search sparkle button; toolbar: `X items — Y to read · Z in progress · W done` + "Add Personal Item" button; infinite scroll grid of `PersonalItemCard`; inline delete confirmation overlay; uses `AddResourceModal` with `destination="personal"`
+- `src/components/PersonalItemCard.tsx` — status badge (grey = To Read/Watch, amber = In Progress, green = Done) with click-to-open dropdown; selecting a status fires `PUT /api/personal-items/[id]` immediately; edit and delete always visible (user always owns their own items)
+- `src/components/ResourceCard.tsx` — `Bookmark` icon (lucide-react) added to action row; clicking fires `POST /api/personal-items`; toasts "Saved to My Learning" (201) or "Already in My Learning" (409)
+- `src/components/AddResourceModal.tsx` — `destination?: 'resources' | 'personal'` prop; when `'personal'`, POST targets `/api/personal-items` instead of `/api/resources`; modal title and submit button label adjust accordingly
+- `src/components/NewsTab.tsx` — "Save to My Learning" button added to each article row alongside "Save to Resources"; fires `POST /api/personal-items` directly (no modal); toasts on success/duplicate
+
+**Smart Search in My Learning:**
+- Sparkle button visible in `PersonalTab` search bar when `aiEnabled && aiHasProvider`, same pattern as Resources tab.
+- Fires `POST /api/ai/personal-search` — uses the same `provider.smartSearch()` interface but passes only the session user's Personal Items as the catalog.
+- Results replace the grid; typing again clears AI results and restores keyword search.

@@ -23,7 +23,8 @@ type Props = {
 };
 
 function stripInlineStyles(html: string): string {
-  return html.replace(/\s*style="[^"]*"/gi, '');
+  // Strip style attributes from all elements except <a> so link colors are preserved
+  return html.replace(/(<(?!a[\s>\/])[a-z][a-z0-9]*\b[^>]*?)\s+style="[^"]*"([^>]*?>)/gi, '$1$2');
 }
 
 function formatDate(dateStr: string): string {
