@@ -249,7 +249,7 @@ Caddy will automatically provision a Let's Encrypt certificate for `hub.notrauto
 
 ---
 
-## Deployment status (as of 2026-06-04)
+## Deployment status (as of 2026-06-08)
 
 | Step | Status | Notes |
 |---|---|---|
@@ -258,44 +258,45 @@ Caddy will automatically provision a Let's Encrypt certificate for `hub.notrauto
 | CSV import | ✅ Working | Import via Settings modal confirmed |
 | TLS / Caddy | ✅ Working | Let's Encrypt cert provisioned |
 | GitHub Actions CI/CD | ⏸ Deferred | SSH key generated (step 6), workflow not yet committed |
-| News ingest (n8n → app) | ❌ Failing | See [News ingest troubleshooting](#news-ingest-troubleshooting) below |
+| News ingest — Daily | ✅ Working | Daily AI news appearing in General AI News tab |
+| News ingest — Weekly | ✅ Working | Learning Radar appearing in Learning Radar tab |
+| Email (SendGrid) | 🚫 Disabled | Intentionally disconnected — too expensive for 2 emails/day |
 
 ---
 
-## News ingest troubleshooting
+## News ingest — n8n workflow notes
 
-### Symptom
+Both workflow JSONs are in `docs/`. Import them into n8n to restore from scratch.
 
-n8n HTTP Request node returns **405 Method Not Allowed** when calling `https://hub.notrauto.org/api/news/ingest`.
+### Common issues and fixes
 
-### Root cause
+**400 "Invalid JSON"** — the n8n HTTP Request node (v4.4) requires explicit body configuration. A POST with no body config sends an empty body and the Next.js route fails to parse it. Required node parameters:
 
-The n8n node is configured with **method: GET**. The `/api/news/ingest` route only accepts **POST**. Next.js returns 405 for any other method on that route.
+```
+sendBody: true
+contentType: raw
+rawContentType: application/json
+body: ={{ JSON.stringify($json) }}
+```
 
-### Fix
+**Content appears as raw Markdown** in the News tab — the GPT node must be explicitly instructed to output HTML wrapped in a ` ```html ``` ` code block. Without this, the model defaults to Markdown, which `dangerouslySetInnerHTML` renders as literal `**bold**` text.
 
-In the n8n workflow, open the HTTP Request node that calls `/api/news/ingest` and:
+**Daily content appearing in Learning Radar tab** — the `Prepare Ingest Body` Code node must use `feed_type: 'daily'` for the daily workflow and `feed_type: 'weekly'` for the weekly workflow. These route to separate tabs in the UI.
 
-1. Set **Method** to `POST`
-2. Set **Body Content Type** to `JSON`
-3. Set the body to:
-   ```json
-   {
-     "feed_type": "daily",
-     "digest_html": "{{ $json.html }}",
-     "articles": []
-   }
-   ```
-   (adjust field references to match your workflow's output shape — see `CLAUDE.md` → "n8n workflow changes" for the exact payload spec)
-4. Add header: `Authorization: Bearer <token>` — token is generated in the app under Settings → News Ingest Token
+**Telegram receives raw HTML** — the Telegram path needs a Code node that strips HTML tags to plain text before the Telegram node. See the exported workflow JSONs for the current implementation.
 
-### Expected response on success
+### Expected ingest response on success
 
 ```json
 { "id": 123 }
 ```
 
-HTTP 200. If you get 401 the Bearer token is wrong or missing. If you get 400, the body shape is incorrect.
+| Status | Meaning |
+|---|---|
+| 200 `{ id }` | Success |
+| 401 | Bearer token missing or wrong — regenerate in Settings → News Ingest Token |
+| 400 "Invalid JSON" | Body not sent as JSON — check HTTP Request node body config |
+| 405 | Wrong HTTP method — must be POST |
 
 ---
 
@@ -304,7 +305,7 @@ HTTP 200. If you get 401 the Bearer token is wrong or missing. If you get 400, t
 All deployments happen automatically on push to `main` via GitHub Actions. To deploy manually:
 
 ```bash
-su - deploy -c "cd /opt/aihub && git pull origin main && cd ai-hub && npm ci && npm run build && pm2 restart aihub"
+su - deploy -c "cd /opt/aihub && git pull cd ai-hub && npm ci && npm run build && pm2 restart aihub"
 ```
 
 ## Checking logs

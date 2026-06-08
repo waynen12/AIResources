@@ -332,7 +332,30 @@ Retention: on each ingest, rows beyond the limit are pruned. Limits: 7 for `dail
 
 **Promote flow:** No new API route — reuses `POST /api/resources` via `AddResourceModal`. `submitted_by` / `account_id` from session. After promotion, `onResourceAdded` callback propagates to the Resources tab.
 
-**n8n workflow changes — manual steps still required:**
-- **Daily Digest**: re-enable the disabled `Code in JavaScript1` node (HTML stripper); wire its output into a new HTTP Request node that POSTs `{ feed_type: "daily", digest_html: "{{ $json.html }}", articles: [array of {title, url} from merged items] }` to `https://<host>/api/news/ingest` with header `Authorization: Bearer <token>`
-- **Learning News**: add an HTTP Request node at the end that POSTs `{ feed_type: "weekly", digest_html: "{{ $json.output[0].content[0].text }}", articles: [...] }` — same structure
-- Both workflows: the `articles` array comes from the items before the AI step (`items.map(i => ({ title: i.json.title, url: i.json.link }))`)
+**n8n workflows — implemented and working.** Exported JSON files are in `docs/`:
+- `docs/General AI News (Daily Digest) (1).json` — daily feed, triggers at 22:00 Europe/Dublin
+- `docs/Learning News (Weekly).json` — weekly feed, triggers Sat/Mon/Wed at 05:30 Europe/Dublin
+
+Both workflows share the same node pattern after the GPT step:
+
+1. **GPT prompt** — instructs the model to output HTML wrapped in a ` ```html ``` ` code block with inline styles (no markdown). This is critical — without explicit HTML instruction the model defaults to Markdown which renders as raw text in the News tab.
+2. **Strip Code Fences** (Code node) — strips the ` ```html ``` ` fences; produces `{ html: string }`.
+3. **Prepare Ingest Body** (Code node) — builds the full POST payload:
+   ```javascript
+   const html = $input.first().json.html;
+   const articles = $('Merge').all()
+     .map(item => ({ title: item.json.title || '', url: item.json.link || '' }))
+     .filter(a => a.title && a.url);
+   return [{ json: { feed_type: 'daily', digest_html: html, articles } }];
+   // feed_type is 'weekly' in the Learning News workflow
+   ```
+4. **HTTP Request** (n8n-nodes-base.httpRequest v4.4) — POSTs to `https://hub.notrauto.org/api/news/ingest`:
+   - `sendBody: true`, `contentType: "raw"`, `rawContentType: "application/json"`
+   - `body: "={{ JSON.stringify($json) }}"`
+   - Header: `Authorization: Bearer <ingest_token>`
+   - **Important:** n8n v4 HTTP Request nodes require explicit `sendBody + contentType + body` — omitting any of these results in an empty POST body and a 400 "Invalid JSON" from the Next.js route.
+5. **Telegram node** (parallel path) — receives the same GPT output and strips HTML tags to plain text before sending; raw HTML must not be sent to Telegram.
+
+**Email (SendGrid) is intentionally disabled** in both workflows — cost was prohibitive for 2 emails/day. The SendGrid nodes remain in the workflow but are disconnected.
+
+**Ingest token:** Generated in Settings → News Ingest Token (admin only). The token in the workflow JSONs above is specific to the `hub.notrauto.org` deployment and should be rotated if the DB is reset.

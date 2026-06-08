@@ -22,6 +22,10 @@ type Props = {
   onResourceAdded: (resource: Resource) => void;
 };
 
+function stripInlineStyles(html: string): string {
+  return html.replace(/\s*style="[^"]*"/gi, '');
+}
+
 function formatDate(dateStr: string): string {
   return new Date(dateStr).toLocaleDateString('en-US', {
     weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
@@ -134,7 +138,7 @@ export default function NewsTab({ aiEnabled, aiHasProvider, existingTags, onReso
             {/* Digest HTML */}
             <div
               className="px-5 py-4 prose prose-sm dark:prose-invert max-w-none"
-              dangerouslySetInnerHTML={{ __html: item.digest_html }}
+              dangerouslySetInnerHTML={{ __html: stripInlineStyles(item.digest_html) }}
             />
 
             {/* Articles / Save to Resources */}
