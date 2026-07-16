@@ -9,7 +9,7 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 
-const SITE_NAME = process.env.NEXT_PUBLIC_SITE_NAME ?? 'AI Hub';
+const SITE_NAME = process.env.NEXT_PUBLIC_SITE_NAME ?? 'Learning Hub';
 
 function LoginForm() {
   const router = useRouter();

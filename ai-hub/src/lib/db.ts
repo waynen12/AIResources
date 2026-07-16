@@ -102,6 +102,12 @@ export function getDb(): Database.Database {
     db.exec(`ALTER TABLE resources ADD COLUMN account_id INTEGER REFERENCES accounts(id)`);
   }
 
+  // If accounts table predates wizard (show_wizard column missing), add it.
+  const accountCols = db.prepare(`PRAGMA table_info(accounts)`).all() as { name: string }[];
+  if (!accountCols.some(c => c.name === 'show_wizard')) {
+    db.exec(`ALTER TABLE accounts ADD COLUMN show_wizard INTEGER NOT NULL DEFAULT 1`);
+  }
+
   // Migrate existing rows: assign them to the first admin account if one exists.
   const firstAdmin = db.prepare(`SELECT id FROM accounts WHERE role = 'admin' AND is_active = 1 ORDER BY id LIMIT 1`).get() as { id: number } | undefined;
   if (firstAdmin) {

@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback, useRef } from 'react';
-import { Search, Plus, Settings, Sparkles, Loader2, LogOut, KeyRound } from 'lucide-react';
+import { Search, Plus, Settings, Sparkles, Loader2, LogOut, KeyRound, BookOpen } from 'lucide-react';
 import { toast } from 'sonner';
 import { signOut, useSession } from 'next-auth/react';
 import { Input } from '@/components/ui/input';
@@ -13,9 +13,10 @@ import SettingsModal from '@/components/SettingsModal';
 import ChangePasswordModal from '@/components/ChangePasswordModal';
 import NewsTab from '@/components/NewsTab';
 import PersonalTab from '@/components/PersonalTab';
+import WizardModal from '@/components/WizardModal';
 import type { Resource } from '@/lib/db';
 
-const SITE_NAME = process.env.NEXT_PUBLIC_SITE_NAME ?? 'AI Hub';
+const SITE_NAME = process.env.NEXT_PUBLIC_SITE_NAME ?? 'Learning Hub';
 
 type ApiResponse = {
   resources: Resource[];
@@ -42,6 +43,8 @@ export default function Home() {
   const [activeTab, setActiveTab] = useState<'resources' | 'news' | 'personal'>('resources');
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [changePasswordOpen, setChangePasswordOpen] = useState(false);
+  const [wizardOpen, setWizardOpen] = useState(false);
+  const [showWizardPref, setShowWizardPref] = useState(true);
   const [aiEnabled, setAiEnabled] = useState(false);
   const [aiHasProvider, setAiHasProvider] = useState(false);
   const [smartMode, setSmartMode] = useState(false);
@@ -85,6 +88,20 @@ export default function Home() {
       }).catch(() => { /* non-fatal */ });
     }
   }, [fetchResources, isAdmin]);
+
+  // Fetch wizard preference once the session is available.
+  useEffect(() => {
+    if (!session?.user?.id) return;
+    fetch('/api/account/wizard')
+      .then(r => r.ok ? r.json() : null)
+      .then((data: { show_wizard: boolean } | null) => {
+        if (data) {
+          setShowWizardPref(data.show_wizard);
+          setWizardOpen(data.show_wizard);
+        }
+      })
+      .catch(() => { /* non-fatal */ });
+  }, [session?.user?.id]);
 
   useEffect(() => {
     if (initialLoad) return;
@@ -155,6 +172,18 @@ export default function Home() {
     setModalOpen(false);
   }
 
+  async function handleWizardFinish(showAtLogin: boolean) {
+    setWizardOpen(false);
+    setShowWizardPref(showAtLogin);
+    try {
+      await fetch('/api/account/wizard', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ show_wizard: showAtLogin }),
+      });
+    } catch { /* non-fatal */ }
+  }
+
   const accountId = session?.user?.id ? Number(session.user.id) : null;
 
   return (
@@ -169,6 +198,14 @@ export default function Home() {
           {session?.user && (
             <span className="text-white/80 text-sm hidden sm:inline">{session.user.username}</span>
           )}
+          <button
+            onClick={() => setWizardOpen(true)}
+            className="rounded-full p-1.5 text-white/80 hover:text-white hover:bg-white/10 transition-colors"
+            aria-label="Show intro guide"
+            title="Show intro guide"
+          >
+            <BookOpen className="h-5 w-5" />
+          </button>
           <button
             onClick={() => setChangePasswordOpen(true)}
             className="rounded-full p-1.5 text-white/80 hover:text-white hover:bg-white/10 transition-colors"
@@ -369,6 +406,13 @@ export default function Home() {
       <ChangePasswordModal
         open={changePasswordOpen}
         onClose={() => setChangePasswordOpen(false)}
+      />
+
+      <WizardModal
+        open={wizardOpen}
+        initialShowAtLogin={showWizardPref}
+        onSkip={() => setWizardOpen(false)}
+        onFinish={handleWizardFinish}
       />
     </div>
   );

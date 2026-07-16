@@ -15,8 +15,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: process.env.NEXT_PUBLIC_SITE_NAME ?? "AI Hub",
-  description: "Team resource hub for AI tutorials, articles, videos and courses",
+  title: process.env.NEXT_PUBLIC_SITE_NAME ?? "Learning Hub",
+  description: "Your personal learning hub — tutorials, articles, videos and courses on any topic",
 };
 
 export default function RootLayout({
