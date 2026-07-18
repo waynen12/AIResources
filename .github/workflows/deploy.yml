@@ -17,9 +17,15 @@ jobs:
           command_timeout: 15m
           script: |
             set -e
+            # Backup DB before touching anything
+            cp /opt/aihub/ai-hub/data/aihub.db /opt/aihub/ai-hub/data/aihub.db.bak.$(date +%Y%m%d_%H%M%S) 2>/dev/null || true
+            # Prune backups older than 7 days
+            find /opt/aihub/ai-hub/data -name 'aihub.db.bak.*' -mtime +7 -delete 2>/dev/null || true
             cd /opt/aihub
             git pull origin main
             cd ai-hub
             npm ci
             npm run build
+            # Run migrations at a known boundary before new code takes traffic
+            npx tsx scripts/run-migrations.ts
             pm2 restart aihub
