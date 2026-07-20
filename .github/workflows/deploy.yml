@@ -2,7 +2,7 @@ name: Deploy
 
 on:
   push:
-    branches: [main]
+    branches: [master]
 
 jobs:
   deploy:
@@ -22,7 +22,7 @@ jobs:
             # Prune backups older than 7 days
             find /opt/aihub/ai-hub/data -name 'aihub.db.bak.*' -mtime +7 -delete 2>/dev/null || true
             cd /opt/aihub
-            git pull origin main
+            git pull origin master
             cd ai-hub
             npm ci
             npm run build
